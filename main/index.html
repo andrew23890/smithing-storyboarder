@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smithing Storyboarder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Smithing Storyboarder</h1>
+    <p class="app-tagline">From bar stock to forged story, one step at a time.</p>
+  </header>
+
+  <main class="app-main">
+    <section class="card">
+      <h2>Welcome, Smith!</h2>
+      <p>
+        This is the starting point for your forging storyboard app.
+        As we build it out, this space will guide you from starting stock
+        to final shape with clear, volume-aware steps.
+      </p>
+      <button id="hello-button" type="button">
+        Say hello from ForgeAI
+      </button>
+
+      <div id="hello-output" class="hello-output" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>Status</h2>
+      <ul class="status-list">
+        <li>✅ Project files linked correctly</li>
+        <li>✅ JavaScript modules enabled</li>
+        <li>⬜ Starting stock input (Phase 1)</li>
+        <li>⬜ Target CAD upload (Phase 3)</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <small>Smithing Storyboarder &middot; ForgeAI helper loaded</small>
+  </footer>
+
+  <!-- Main JS entry point (ES module) -->
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
