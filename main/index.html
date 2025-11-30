@@ -93,7 +93,7 @@
       <div id="stock-summary" class="stock-summary" aria-live="polite"></div>
     </section>
 
-    <!-- Target Shape Card (manual model for now) -->
+    <!-- Target Shape Card -->
     <section class="card">
       <h2>Target Shape (Simple Model)</h2>
       <p class="card-intro">
@@ -149,6 +149,26 @@
       <div id="target-compare" class="stock-summary" aria-live="polite"></div>
     </section>
 
+    <!-- Forging Steps Card -->
+    <section class="card">
+      <h2>Forging Steps (Model Preview)</h2>
+      <p class="card-intro">
+        Each major forging step will live here. Right now we’re testing the data
+        model and volume budget. Later, you’ll edit real steps instead of demo ones.
+      </p>
+
+      <button id="steps-add-demo-btn" type="button" class="primary-btn">
+        Add demo taper step
+      </button>
+
+      <div id="steps-list" class="steps-list"></div>
+      <div
+        id="steps-volume-summary"
+        class="stock-summary"
+        aria-live="polite"
+      ></div>
+    </section>
+
     <!-- ForgeAI Hello Card -->
     <section class="card">
       <h2>ForgeAI Hello Check</h2>
@@ -170,8 +190,9 @@
         <li>✅ JavaScript modules enabled</li>
         <li>✅ Starting stock input &amp; volume (Phase 1)</li>
         <li>✅ Target shape model &amp; manual volume (Phase 1.2)</li>
+        <li>✅ Steps & operations model (Phase 1.3)</li>
         <li>⬜ CAD-based target import (Phase 3)</li>
-        <li>⬜ Volume-aware forging steps</li>
+        <li>⬜ Geometric step transforms & storyboard drawings</li>
       </ul>
     </section>
   </main>

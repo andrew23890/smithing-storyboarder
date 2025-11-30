@@ -4,11 +4,17 @@
 import { forgeGreeting } from "./modules/hello.js";
 import { Stock } from "./modules/stockModel.js";
 import { TargetShape } from "./modules/shapeModel.js";
+import {
+  ForgeStep,
+  summarizeStepsVolumeEffect,
+} from "./modules/stepModel.js";
+import { FORGE_OPERATION_TYPES, getOperationLabel } from "./modules/operations.js";
 
 // Simple app state
 const appState = {
   startingStock: null,
   targetShape: null,
+  steps: [],
 };
 
 function setupHelloButton() {
@@ -159,6 +165,9 @@ function setupStockForm() {
       summaryEl.textContent = summaryText;
 
       console.log("[StockForm] Starting stock set:", { stock, volume });
+
+      // Re-render steps volume summary now that we know starting volume
+      renderSteps();
     } catch (err) {
       console.error("[StockForm] Unexpected error:", err);
       errorEl.textContent =
@@ -239,19 +248,28 @@ function setupTargetShapeForm() {
       summaryEl.textContent = summaryText;
       console.log("[TargetShape] Target set:", targetShape);
 
-      // If we already have starting stock, show a quick volume comparison
+      // Compare to starting stock volume if possible
       if (appState.startingStock) {
         const stockVolume = appState.startingStock.computeVolume();
         const stockUnits = appState.startingStock.units;
 
         if (stockUnits === targetShape.units && Number.isFinite(stockVolume)) {
           const diff = stockVolume - targetShape.volume;
-          const sign = diff > 0 ? "more" : "less";
           const diffAbs = Math.abs(diff);
 
-          compareEl.textContent =
-            `Starting stock has ${diffAbs.toFixed(3)} ${units}³ ${sign} volume ` +
-            `than the target shape.`;
+          if (diff < 0) {
+            compareEl.textContent =
+              `⚠️ Target requires ${diffAbs.toFixed(
+                3
+              )} ${units}³ more material than your starting stock. ` +
+              `Final volume must be ≤ starting volume, so this plan is impossible without adding material.`;
+          } else {
+            compareEl.textContent =
+              `Starting stock has ${diffAbs.toFixed(
+                3
+              )} ${units}³ more volume than the target shape. ` +
+              `Final volume will need to be ≤ starting volume, so you must remove or redistribute this material.`;
+          }
         } else {
           compareEl.textContent =
             "Starting stock and target shape use different units, so volume comparison is approximate.";
@@ -268,11 +286,150 @@ function setupTargetShapeForm() {
   });
 }
 
+/**
+ * Renders the list of steps and the current volume budget summary.
+ */
+function renderSteps() {
+  const listEl = document.getElementById("steps-list");
+  const summaryEl = document.getElementById("steps-volume-summary");
+
+  if (!listEl || !summaryEl) {
+    console.error("[Steps] Missing steps-list or steps-volume-summary element.");
+    return;
+  }
+
+  listEl.innerHTML = "";
+
+  if (!appState.steps || appState.steps.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No steps defined yet. Add a demo step to see the model.";
+    empty.className = "steps-empty";
+    listEl.appendChild(empty);
+  } else {
+    const ul = document.createElement("ul");
+    ul.className = "steps-ul";
+
+    for (const step of appState.steps) {
+      const li = document.createElement("li");
+      li.className = "steps-item";
+
+      const opLabel = getOperationLabel(step.operationType);
+      const metaBits = [];
+
+      metaBits.push(`Mass: ${step.massChangeType}`);
+
+      if (step.volumeDelta > 0) {
+        const action =
+          step.massChangeType === "removed"
+            ? "volume removed"
+            : step.massChangeType === "added"
+            ? "volume added"
+            : "volume delta";
+        metaBits.push(`${step.volumeDelta.toFixed(3)} ${action}`);
+      }
+
+      li.innerHTML = `<strong>${opLabel}</strong> — ${step.description}<br/><small>${metaBits.join(
+        " · "
+      )}</small>`;
+
+      ul.appendChild(li);
+    }
+
+    listEl.appendChild(ul);
+  }
+
+  // Volume budget summary
+  const { removed, added } = summarizeStepsVolumeEffect(appState.steps);
+  let summaryText = `Total volume removed by steps: ${removed.toFixed(
+    3
+  )}  ·  Total volume added: ${added.toFixed(3)}`;
+
+  if (appState.startingStock) {
+    const stockVolume = appState.startingStock.computeVolume();
+    const units = appState.startingStock.units;
+
+    if (Number.isFinite(stockVolume)) {
+      const finalBudget = stockVolume - removed + added;
+
+      summaryText += `\nStarting stock volume: ${stockVolume.toFixed(
+        3
+      )} ${units}³`;
+      summaryText += `\nTheoretical volume budget after steps: ${finalBudget.toFixed(
+        3
+      )} ${units}³`;
+
+      if (appState.targetShape && appState.targetShape.units === units) {
+        const targetVol = appState.targetShape.volume;
+        if (Number.isFinite(targetVol)) {
+          if (targetVol > stockVolume) {
+            summaryText +=
+              `\n⚠️ Target volume (${targetVol.toFixed(
+                3
+              )}) is greater than starting volume. This is physically impossible unless material is added.`;
+          } else if (targetVol > finalBudget) {
+            summaryText +=
+              `\n⚠️ Target volume (${targetVol.toFixed(
+                3
+              )}) is greater than remaining budget (${finalBudget.toFixed(
+                3
+              )}). Steps currently remove too much net volume.`;
+          } else {
+            summaryText +=
+              `\n✅ Target volume (${targetVol.toFixed(
+                3
+              )}) is ≤ starting volume and within the current volume budget.`;
+          }
+        }
+      }
+    }
+  } else {
+    summaryText +=
+      "\nDefine starting stock to see how this compares to your initial volume.";
+  }
+
+  summaryEl.textContent = summaryText;
+}
+
+function setupStepsDebug() {
+  console.log("[Steps] Setting up steps debug UI…");
+
+  const addDemoButton = document.getElementById("steps-add-demo-btn");
+  if (!addDemoButton) {
+    console.error("[Steps] steps-add-demo-btn not found in DOM.");
+    return;
+  }
+
+  addDemoButton.addEventListener("click", () => {
+    console.log("[Steps] Add demo step clicked");
+
+    // For now, create a simple demo TAPER step with conserved volume.
+    const demoStep = new ForgeStep({
+      operationType: FORGE_OPERATION_TYPES.TAPER,
+      params: {
+        location: "end",
+        length: "2 in",
+        from: '0.625" square',
+        to: '0.250" square',
+      },
+      // For conserved mass operations, we keep volumeDelta = 0.
+      volumeDelta: 0,
+      notes: "Demo step created from UI button.",
+    });
+
+    appState.steps.push(demoStep);
+    renderSteps();
+  });
+
+  // Initial render
+  renderSteps();
+}
+
 function initApp() {
   console.log("Smithing Storyboarder booting up…");
   setupHelloButton();
   setupStockForm();
   setupTargetShapeForm();
+  setupStepsDebug();
 }
 
 document.addEventListener("DOMContentLoaded", initApp);
