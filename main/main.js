@@ -3,10 +3,12 @@
 
 import { forgeGreeting } from "./modules/hello.js";
 import { Stock } from "./modules/stockModel.js";
+import { TargetShape } from "./modules/shapeModel.js";
 
 // Simple app state
 const appState = {
   startingStock: null,
+  targetShape: null,
 };
 
 function setupHelloButton() {
@@ -56,21 +58,7 @@ function setupStockForm() {
     !summaryEl
   ) {
     console.error(
-      "[StockForm] One or more stock-form elements are missing from the DOM.",
-      {
-        materialSelect,
-        shapeSelect,
-        dimAInput,
-        dimBInput,
-        dimALabel,
-        dimBLabel,
-        dimBField,
-        lengthInput,
-        unitsSelect,
-        calcButton,
-        errorEl,
-        summaryEl,
-      }
+      "[StockForm] One or more stock-form elements are missing from the DOM."
     );
     return;
   }
@@ -110,10 +98,8 @@ function setupStockForm() {
   calcButton.addEventListener("click", () => {
     console.log("[StockForm] Calculate clicked");
 
-    // This line guarantees you *see something* if the click handler is wired
-    const now = new Date().toLocaleTimeString();
-    summaryEl.textContent = `Clicked Calculate at ${now}`;
     errorEl.textContent = "";
+    summaryEl.textContent = "";
 
     const material = materialSelect.value || "unknown";
     const shape = shapeSelect.value;
@@ -125,15 +111,6 @@ function setupStockForm() {
         : null;
     const length = parseFloat(lengthInput.value);
     const units = unitsSelect.value || "in";
-
-    console.log("[StockForm] Raw inputs:", {
-      material,
-      shape,
-      dimAInput: dimAInput.value,
-      dimBInput: dimBInput.value,
-      lengthInput: lengthInput.value,
-      units,
-    });
 
     const errors = [];
 
@@ -190,10 +167,112 @@ function setupStockForm() {
   });
 }
 
+function setupTargetShapeForm() {
+  console.log("[TargetShape] Setting up target shape form…");
+
+  const labelInput = document.getElementById("target-label");
+  const volumeInput = document.getElementById("target-volume");
+  const unitsSelect = document.getElementById("target-units");
+  const notesInput = document.getElementById("target-notes");
+  const setButton = document.getElementById("target-set-btn");
+  const errorEl = document.getElementById("target-error");
+  const summaryEl = document.getElementById("target-summary");
+  const compareEl = document.getElementById("target-compare");
+
+  if (
+    !labelInput ||
+    !volumeInput ||
+    !unitsSelect ||
+    !notesInput ||
+    !setButton ||
+    !errorEl ||
+    !summaryEl ||
+    !compareEl
+  ) {
+    console.error(
+      "[TargetShape] One or more target-shape elements are missing from the DOM."
+    );
+    return;
+  }
+
+  setButton.addEventListener("click", () => {
+    console.log("[TargetShape] Set target clicked");
+
+    errorEl.textContent = "";
+    summaryEl.textContent = "";
+    compareEl.textContent = "";
+
+    const label = (labelInput.value || "").trim();
+    const volume = parseFloat(volumeInput.value);
+    const units = unitsSelect.value || "in";
+    const notes = notesInput.value || "";
+
+    const errors = [];
+
+    if (!label) {
+      errors.push("Please give the target shape a label/name.");
+    }
+
+    if (!(volume > 0)) {
+      errors.push("Target volume must be greater than 0.");
+    }
+
+    if (errors.length > 0) {
+      const msg = errors.join(" ");
+      console.warn("[TargetShape] Validation errors:", msg);
+      errorEl.textContent = msg;
+      return;
+    }
+
+    try {
+      const targetShape = new TargetShape({
+        sourceType: "manual", // CAD will be a later phase
+        label,
+        volume,
+        units,
+        notes,
+      });
+
+      appState.targetShape = targetShape;
+
+      const summaryText = targetShape.describe();
+      summaryEl.textContent = summaryText;
+      console.log("[TargetShape] Target set:", targetShape);
+
+      // If we already have starting stock, show a quick volume comparison
+      if (appState.startingStock) {
+        const stockVolume = appState.startingStock.computeVolume();
+        const stockUnits = appState.startingStock.units;
+
+        if (stockUnits === targetShape.units && Number.isFinite(stockVolume)) {
+          const diff = stockVolume - targetShape.volume;
+          const sign = diff > 0 ? "more" : "less";
+          const diffAbs = Math.abs(diff);
+
+          compareEl.textContent =
+            `Starting stock has ${diffAbs.toFixed(3)} ${units}³ ${sign} volume ` +
+            `than the target shape.`;
+        } else {
+          compareEl.textContent =
+            "Starting stock and target shape use different units, so volume comparison is approximate.";
+        }
+      } else {
+        compareEl.textContent =
+          "No starting stock set yet. Once you define it, the app will compare volumes here.";
+      }
+    } catch (err) {
+      console.error("[TargetShape] Unexpected error:", err);
+      errorEl.textContent =
+        "An unexpected error occurred while setting the target shape. Check the console for details.";
+    }
+  });
+}
+
 function initApp() {
   console.log("Smithing Storyboarder booting up…");
   setupHelloButton();
   setupStockForm();
+  setupTargetShapeForm();
 }
 
 document.addEventListener("DOMContentLoaded", initApp);

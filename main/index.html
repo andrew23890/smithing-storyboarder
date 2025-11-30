@@ -13,7 +13,7 @@
   </header>
 
   <main class="app-main">
-    <!-- Phase 1: Starting Stock Card -->
+    <!-- Starting Stock Card -->
     <section class="card">
       <h2>Starting Stock</h2>
       <p class="card-intro">
@@ -93,7 +93,63 @@
       <div id="stock-summary" class="stock-summary" aria-live="polite"></div>
     </section>
 
-    <!-- Original Hello World Card -->
+    <!-- Target Shape Card (manual model for now) -->
+    <section class="card">
+      <h2>Target Shape (Simple Model)</h2>
+      <p class="card-intro">
+        Eventually this will be driven by a CAD file. For now, you can define a
+        target volume manually so we can test volume matching and step logic.
+      </p>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="target-label">Target name / label</label>
+          <input
+            id="target-label"
+            type="text"
+            placeholder="e.g. Leaf keychain, Scroll hook"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-volume">Target volume</label>
+          <input
+            id="target-volume"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. 10.5"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-units">Units</label>
+          <select id="target-units">
+            <option value="in" selected>Inches³ match stock (in)</option>
+            <option value="mm">Millimeters³ match stock (mm)</option>
+            <option value="cm">Centimeters³ match stock (cm)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="target-notes">Notes (optional)</label>
+          <textarea
+            id="target-notes"
+            placeholder="Any notes about where this volume estimate came from."
+          ></textarea>
+        </div>
+      </div>
+
+      <button id="target-set-btn" type="button" class="primary-btn">
+        Set Target Shape
+      </button>
+
+      <p id="target-error" class="error-message" aria-live="polite"></p>
+      <div id="target-summary" class="stock-summary" aria-live="polite"></div>
+      <div id="target-compare" class="stock-summary" aria-live="polite"></div>
+    </section>
+
+    <!-- ForgeAI Hello Card -->
     <section class="card">
       <h2>ForgeAI Hello Check</h2>
       <p>
@@ -113,7 +169,8 @@
         <li>✅ Project files linked correctly</li>
         <li>✅ JavaScript modules enabled</li>
         <li>✅ Starting stock input &amp; volume (Phase 1)</li>
-        <li>⬜ Target CAD upload (Phase 3)</li>
+        <li>✅ Target shape model &amp; manual volume (Phase 1.2)</li>
+        <li>⬜ CAD-based target import (Phase 3)</li>
         <li>⬜ Volume-aware forging steps</li>
       </ul>
     </section>

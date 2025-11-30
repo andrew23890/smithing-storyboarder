@@ -112,6 +112,23 @@ body {
   background-color: #f9fafb;
 }
 
+.field textarea {
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+  outline: none;
+  background-color: #f9fafb;
+  resize: vertical;
+  min-height: 3rem;
+}
+
+.field textarea:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 1px #fed7aa;
+  background-color: #ffffff;
+}
+
 .field input:focus,
 .field select:focus {
   border-color: #f97316;
