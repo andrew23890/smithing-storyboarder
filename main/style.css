@@ -41,12 +41,17 @@ body {
 }
 
 .app-main {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 1.5rem auto;
   padding: 0 1rem 2rem;
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr);
+  grid-template-rows: auto auto;
   gap: 1.25rem;
+}
+
+.app-main > .card:first-child {
+  grid-column: 1 / -1; /* Starting stock card spans both columns */
 }
 
 .app-footer {
@@ -71,9 +76,57 @@ body {
   margin-bottom: 0.5rem;
 }
 
-/* Button */
+.card-intro {
+  margin-bottom: 0.9rem;
+  color: #4b5563; /* gray-600 */
+  font-size: 0.95rem;
+}
+
+/* Form grid */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.field input,
+.field select {
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+  outline: none;
+  background-color: #f9fafb;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 1px #fed7aa;
+  background-color: #ffffff;
+}
+
+.field-secondary {
+  /* This one can be hidden by JS when not needed (e.g., square bar) */
+}
+
+/* Primary button */
+.primary-btn,
 #hello-button {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   padding: 0.6rem 1.1rem;
   border-radius: 999px;
   border: none;
@@ -87,10 +140,12 @@ body {
     filter 0.1s ease;
 }
 
+.primary-btn:hover,
 #hello-button:hover {
   filter: brightness(1.05);
 }
 
+.primary-btn:active,
 #hello-button:active {
   transform: translateY(1px);
   box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
@@ -120,9 +175,31 @@ body {
   margin-top: 0.25rem;
 }
 
+/* Stock summary & errors */
+.stock-summary {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  font-size: 0.9rem;
+  color: #111827;
+}
+
+.error-message {
+  margin-top: 0.4rem;
+  min-height: 1.1rem;
+  font-size: 0.85rem;
+  color: #b91c1c; /* red-700 */
+}
+
 /* Responsive tweaks */
 @media (max-width: 768px) {
   .app-main {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-main > .card:first-child {
+    grid-column: auto;
   }
 }

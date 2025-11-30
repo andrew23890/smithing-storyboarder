@@ -13,12 +13,91 @@
   </header>
 
   <main class="app-main">
+    <!-- Phase 1: Starting Stock Card -->
     <section class="card">
-      <h2>Welcome, Smith!</h2>
+      <h2>Starting Stock</h2>
+      <p class="card-intro">
+        Tell the app what you’re starting with. We’ll compute the stock volume
+        so later steps can keep your mass honest.
+      </p>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="stock-material">Material</label>
+          <select id="stock-material">
+            <option value="mild steel" selected>Mild steel</option>
+            <option value="tool steel">Tool steel</option>
+            <option value="stainless">Stainless steel</option>
+            <option value="other">Other / unknown</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="stock-shape">Cross-section shape</label>
+          <select id="stock-shape">
+            <option value="square" selected>Square bar</option>
+            <option value="round">Round bar</option>
+            <option value="flat">Flat bar</option>
+            <option value="rectangle">Rectangular bar</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label id="dim-a-label" for="stock-dim-a">Side (in chosen units)</label>
+          <input
+            id="stock-dim-a"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. 0.625 for 5/8"
+          />
+        </div>
+
+        <div class="field field-secondary" id="field-dim-b">
+          <label id="dim-b-label" for="stock-dim-b">Thickness (in chosen units)</label>
+          <input
+            id="stock-dim-b"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. 0.25"
+          />
+        </div>
+
+        <div class="field">
+          <label for="stock-length">Length</label>
+          <input
+            id="stock-length"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 30"
+          />
+        </div>
+
+        <div class="field">
+          <label for="stock-units">Units</label>
+          <select id="stock-units">
+            <option value="in" selected>Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="stock-calc-btn" type="button" class="primary-btn">
+        Calculate Volume
+      </button>
+
+      <p id="stock-error" class="error-message" aria-live="polite"></p>
+      <div id="stock-summary" class="stock-summary" aria-live="polite"></div>
+    </section>
+
+    <!-- Original Hello World Card -->
+    <section class="card">
+      <h2>ForgeAI Hello Check</h2>
       <p>
-        This is the starting point for your forging storyboard app.
-        As we build it out, this space will guide you from starting stock
-        to final shape with clear, volume-aware steps.
+        This little button is just here to prove your JavaScript modules are alive.
       </p>
       <button id="hello-button" type="button">
         Say hello from ForgeAI
@@ -27,13 +106,15 @@
       <div id="hello-output" class="hello-output" aria-live="polite"></div>
     </section>
 
+    <!-- Status Card -->
     <section class="card">
       <h2>Status</h2>
       <ul class="status-list">
         <li>✅ Project files linked correctly</li>
         <li>✅ JavaScript modules enabled</li>
-        <li>⬜ Starting stock input (Phase 1)</li>
+        <li>✅ Starting stock input &amp; volume (Phase 1)</li>
         <li>⬜ Target CAD upload (Phase 3)</li>
+        <li>⬜ Volume-aware forging steps</li>
       </ul>
     </section>
   </main>
