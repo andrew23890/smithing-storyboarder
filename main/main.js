@@ -8,7 +8,11 @@ import {
   ForgeStep,
   summarizeStepsVolumeEffect,
 } from "./modules/stepModel.js";
-import { FORGE_OPERATION_TYPES, getOperationLabel } from "./modules/operations.js";
+import {
+  FORGE_OPERATION_TYPES,
+  getOperationLabel,
+  getOperationMassChangeType,
+} from "./modules/operations.js";
 
 // Simple app state
 const appState = {
@@ -278,6 +282,8 @@ function setupTargetShapeForm() {
         compareEl.textContent =
           "No starting stock set yet. Once you define it, the app will compare volumes here.";
       }
+
+      renderSteps();
     } catch (err) {
       console.error("[TargetShape] Unexpected error:", err);
       errorEl.textContent =
@@ -302,14 +308,14 @@ function renderSteps() {
 
   if (!appState.steps || appState.steps.length === 0) {
     const empty = document.createElement("p");
-    empty.textContent = "No steps defined yet. Add a demo step to see the model.";
+    empty.textContent = "No steps defined yet. Add a step to build your plan.";
     empty.className = "steps-empty";
     listEl.appendChild(empty);
   } else {
     const ul = document.createElement("ul");
     ul.className = "steps-ul";
 
-    for (const step of appState.steps) {
+    appState.steps.forEach((step, index) => {
       const li = document.createElement("li");
       li.className = "steps-item";
 
@@ -328,12 +334,24 @@ function renderSteps() {
         metaBits.push(`${step.volumeDelta.toFixed(3)} ${action}`);
       }
 
-      li.innerHTML = `<strong>${opLabel}</strong> — ${step.description}<br/><small>${metaBits.join(
-        " · "
-      )}</small>`;
+      const beforeAfter = document.createElement("div");
+      beforeAfter.innerHTML = `<strong>${index + 1}. ${opLabel}</strong> — ${
+        step.description
+      }<br/><small>${metaBits.join(" · ")}</small>`;
 
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "steps-delete-btn";
+      deleteBtn.textContent = "Remove";
+      deleteBtn.addEventListener("click", () => {
+        appState.steps.splice(index, 1);
+        renderSteps();
+      });
+
+      li.appendChild(beforeAfter);
+      li.appendChild(deleteBtn);
       ul.appendChild(li);
-    }
+    });
 
     listEl.appendChild(ul);
   }
@@ -390,37 +408,119 @@ function renderSteps() {
   summaryEl.textContent = summaryText;
 }
 
-function setupStepsDebug() {
-  console.log("[Steps] Setting up steps debug UI…");
+function setupStepsUI() {
+  console.log("[Steps] Setting up steps UI…");
 
-  const addDemoButton = document.getElementById("steps-add-demo-btn");
-  if (!addDemoButton) {
-    console.error("[Steps] steps-add-demo-btn not found in DOM.");
+  const opSelect = document.getElementById("steps-op");
+  const lengthInput = document.getElementById("steps-param-length");
+  const locationInput = document.getElementById("steps-param-location");
+  const descInput = document.getElementById("steps-description");
+  const volumeDeltaInput = document.getElementById("steps-volume-delta");
+  const volumeDeltaLabel = document.getElementById(
+    "steps-volume-delta-label"
+  );
+  const addBtn = document.getElementById("steps-add-btn");
+  const clearBtn = document.getElementById("steps-clear-btn");
+  const errorEl = document.getElementById("steps-error");
+
+  if (
+    !opSelect ||
+    !lengthInput ||
+    !locationInput ||
+    !descInput ||
+    !volumeDeltaInput ||
+    !volumeDeltaLabel ||
+    !addBtn ||
+    !clearBtn ||
+    !errorEl
+  ) {
+    console.error("[Steps] One or more steps UI elements are missing.");
     return;
   }
 
-  addDemoButton.addEventListener("click", () => {
-    console.log("[Steps] Add demo step clicked");
+  // Populate operation dropdown
+  opSelect.innerHTML = "";
+  const opValues = Object.values(FORGE_OPERATION_TYPES);
+  opValues.forEach((op) => {
+    const option = document.createElement("option");
+    option.value = op;
+    option.textContent = getOperationLabel(op);
+    opSelect.appendChild(option);
+  });
 
-    // For now, create a simple demo TAPER step with conserved volume.
-    const demoStep = new ForgeStep({
-      operationType: FORGE_OPERATION_TYPES.TAPER,
-      params: {
-        location: "end",
-        length: "2 in",
-        from: '0.625" square',
-        to: '0.250" square',
-      },
-      // For conserved mass operations, we keep volumeDelta = 0.
-      volumeDelta: 0,
-      notes: "Demo step created from UI button.",
-    });
+  function updateVolumeDeltaLabel() {
+    const op = opSelect.value;
+    const massType = getOperationMassChangeType(op);
 
-    appState.steps.push(demoStep);
+    if (massType === "removed") {
+      volumeDeltaLabel.textContent = "Volume removed (units³)";
+    } else if (massType === "added") {
+      volumeDeltaLabel.textContent = "Volume added (units³)";
+    } else {
+      volumeDeltaLabel.textContent =
+        "Volume change (optional, usually 0 for conserved steps)";
+    }
+  }
+
+  opSelect.addEventListener("change", updateVolumeDeltaLabel);
+  updateVolumeDeltaLabel();
+
+  addBtn.addEventListener("click", () => {
+    errorEl.textContent = "";
+
+    const operationType = opSelect.value;
+    const lengthText = (lengthInput.value || "").trim();
+    const locationText = (locationInput.value || "").trim();
+    const userDesc = (descInput.value || "").trim();
+    const volumeDeltaRaw = volumeDeltaInput.value;
+    const volumeDelta = volumeDeltaRaw ? parseFloat(volumeDeltaRaw) : 0;
+
+    if (!operationType) {
+      errorEl.textContent = "Please choose an operation type.";
+      return;
+    }
+
+    if (volumeDeltaRaw && !(volumeDelta >= 0)) {
+      errorEl.textContent =
+        "Volume change must be a non-negative number if provided.";
+      return;
+    }
+
+    // Build params object (simple for now)
+    const params = {};
+    if (lengthText) params.length = lengthText;
+    if (locationText) params.location = locationText;
+
+    try {
+      const step = new ForgeStep({
+        operationType,
+        params,
+        description: userDesc || undefined,
+        volumeDelta: volumeDelta || 0,
+        notes: "",
+      });
+
+      appState.steps.push(step);
+
+      // Clear inputs for next step
+      lengthInput.value = "";
+      locationInput.value = "";
+      descInput.value = "";
+      volumeDeltaInput.value = "";
+
+      renderSteps();
+    } catch (err) {
+      console.error("[Steps] Error creating step:", err);
+      errorEl.textContent =
+        "An unexpected error occurred while creating the step.";
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    appState.steps = [];
     renderSteps();
   });
 
-  // Initial render
   renderSteps();
 }
 
@@ -429,7 +529,7 @@ function initApp() {
   setupHelloButton();
   setupStockForm();
   setupTargetShapeForm();
-  setupStepsDebug();
+  setupStepsUI();
 }
 
 document.addEventListener("DOMContentLoaded", initApp);

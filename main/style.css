@@ -135,7 +135,7 @@ body {
   /* This one can be hidden by JS when not needed (e.g., square bar) */
 }
 
-/* Primary button */
+/* Primary & secondary buttons */
 .primary-btn,
 #hello-button {
   margin-top: 0.5rem;
@@ -152,15 +152,31 @@ body {
     filter 0.1s ease;
 }
 
+.secondary-btn {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: #ffffff;
+  color: #374151;
+  transition: transform 0.05s ease, box-shadow 0.05s ease,
+    filter 0.1s ease;
+}
+
 .primary-btn:hover,
-#hello-button:hover {
+#hello-button:hover,
+.secondary-btn:hover {
   filter: brightness(1.05);
 }
 
 .primary-btn:active,
-#hello-button:active {
+#hello-button:active,
+.secondary-btn:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
 }
 
 /* Hello output area */
@@ -206,7 +222,18 @@ body {
   color: #b91c1c; /* red-700 */
 }
 
-/* Steps list */
+/* Steps */
+.steps-form-grid {
+  margin-top: 0.5rem;
+}
+
+.steps-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .steps-list {
   margin-top: 0.75rem;
 }
@@ -225,6 +252,10 @@ body {
   padding: 0.35rem 0;
   border-bottom: 1px dashed #e5e7eb;
   font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
 .steps-item strong {
@@ -235,6 +266,16 @@ body {
   color: #6b7280;
 }
 
+.steps-delete-btn {
+  border: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
 /* Responsive tweaks */
 @media (max-width: 768px) {
   .app-main {
@@ -243,5 +284,10 @@ body {
 
   .app-main > .card:first-child {
     grid-column: auto;
+  }
+
+  .steps-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
