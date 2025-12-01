@@ -14,6 +14,7 @@ import {
   getOperationMassChangeType,
 } from "./modules/operations.js";
 import { parseSTLFile } from "./modules/cadParser.js";
+import { computeStockVolume } from "./modules/volumeEngine.js";
 import {
   barStateFromStock,
   applyStepsToBar,
@@ -162,8 +163,8 @@ function setupStockForm() {
         units,
       });
 
-      const volume = stock.computeVolume();
-      console.log("[StockForm] Computed volume:", volume);
+      const volume = computeStockVolume(stock);
+      console.log("[StockForm] Computed volume via volumeEngine:", volume);
 
       if (!Number.isFinite(volume)) {
         const msg =
@@ -208,7 +209,7 @@ function updateTargetComparison() {
     return;
   }
 
-  const stockVolume = startingStock.computeVolume();
+  const stockVolume = computeStockVolume(startingStock);
   const stockUnits = startingStock.units;
   const targetUnits = targetShape.units;
 
@@ -478,7 +479,7 @@ function renderSteps() {
   )}  ·  Total volume added: ${added.toFixed(3)}`;
 
   if (appState.startingStock) {
-    const stockVolume = appState.startingStock.computeVolume();
+    const stockVolume = computeStockVolume(appState.startingStock);
     const units = appState.startingStock.units;
 
     if (Number.isFinite(stockVolume)) {
