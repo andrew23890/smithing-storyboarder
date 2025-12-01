@@ -14,6 +14,10 @@ import {
   getOperationMassChangeType,
 } from "./modules/operations.js";
 import { parseSTLFile } from "./modules/cadParser.js";
+import {
+  barStateFromStock,
+  applyStepsToBar,
+} from "./modules/geometryEngine.js";
 
 // Simple app state
 const appState = {
@@ -635,6 +639,63 @@ function setupStepsUI() {
   renderSteps();
 }
 
+/* ----------------- GEOMETRY SIMULATION UI ----------------- */
+
+function setupGeometrySimulationUI() {
+  console.log("[Geometry] Setting up geometry simulation UI…");
+
+  const simBtn = document.getElementById("geom-simulate-btn");
+  const errorEl = document.getElementById("geom-error");
+  const outputEl = document.getElementById("geom-output");
+
+  if (!simBtn || !errorEl || !outputEl) {
+    console.error("[Geometry] Geometry simulation elements missing.");
+    return;
+  }
+
+  simBtn.addEventListener("click", () => {
+    errorEl.textContent = "";
+    outputEl.textContent = "";
+
+    if (!appState.startingStock) {
+      errorEl.textContent =
+        "Please define starting stock before running the geometry simulation.";
+      return;
+    }
+
+    const baseBar = barStateFromStock(appState.startingStock);
+
+    if (!appState.steps || appState.steps.length === 0) {
+      outputEl.textContent =
+        "No steps defined. The bar remains in its starting state:\n\n" +
+        baseBar.describe();
+      return;
+    }
+
+    const { finalState, snapshots } = applyStepsToBar(baseBar, appState.steps);
+
+    let text = "";
+    text += "Starting bar state:\n";
+    text += `  ${baseBar.describe()}\n\n`;
+
+    snapshots.forEach((snap, idx) => {
+      const step = snap.step;
+      const opLabel = getOperationLabel(step.operationType);
+      text += `Step ${idx + 1}: ${opLabel}\n`;
+      if (step.description) {
+        text += `  Description: ${step.description}\n`;
+      }
+      text += `  Engine note: ${snap.engineNote}\n`;
+      text += `  Bar state: ${snap.stateDescription}\n\n`;
+    });
+
+    text += "Final bar state:\n";
+    text += `  ${finalState.describe()}\n`;
+
+    outputEl.textContent = text;
+  });
+}
+
 /* ----------------- INIT ----------------- */
 
 function initApp() {
@@ -644,6 +705,7 @@ function initApp() {
   setupTargetShapeForm();
   setupCadImport();
   setupStepsUI();
+  setupGeometrySimulationUI();
 }
 
 document.addEventListener("DOMContentLoaded", initApp);
