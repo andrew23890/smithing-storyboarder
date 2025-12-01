@@ -95,12 +95,14 @@
 
     <!-- Target Shape Card -->
     <section class="card">
-      <h2>Target Shape (Simple Model)</h2>
+      <h2>Target Shape</h2>
       <p class="card-intro">
-        Eventually this will be driven by a CAD file. For now, you can define a
-        target volume manually so we can test volume matching and step logic.
+        You can define a target by volume manually, or import a 3D shape (STL)
+        and let the app compute its volume.
       </p>
 
+      <!-- Manual volume section -->
+      <h3 class="subheading">Manual target volume</h3>
       <div class="form-grid">
         <div class="field">
           <label for="target-label">Target name / label</label>
@@ -141,10 +143,47 @@
       </div>
 
       <button id="target-set-btn" type="button" class="primary-btn">
-        Set Target Shape
+        Set Manual Target Shape
       </button>
 
       <p id="target-error" class="error-message" aria-live="polite"></p>
+
+      <hr class="section-divider" />
+
+      <!-- CAD / STL section -->
+      <h3 class="subheading">Target from CAD (STL)</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label for="cad-file">STL file</label>
+          <input id="cad-file" type="file" accept=".stl,.STL" />
+        </div>
+
+        <div class="field">
+          <label for="cad-label">Name / label (optional)</label>
+          <input
+            id="cad-label"
+            type="text"
+            placeholder="If empty, the filename will be used."
+          />
+        </div>
+
+        <div class="field">
+          <label for="cad-units">Units for this STL</label>
+          <select id="cad-units">
+            <option value="in" selected>Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="cad-load-btn" type="button" class="primary-btn">
+        Load STL and set target
+      </button>
+
+      <p id="cad-error" class="error-message" aria-live="polite"></p>
+
+      <!-- Shared summary/comparison -->
       <div id="target-summary" class="stock-summary" aria-live="polite"></div>
       <div id="target-compare" class="stock-summary" aria-live="polite"></div>
     </section>
@@ -245,9 +284,10 @@
         <li>✅ JavaScript modules enabled</li>
         <li>✅ Starting stock input &amp; volume (Phase 1)</li>
         <li>✅ Target shape model &amp; manual volume (Phase 1.2)</li>
+        <li>✅ CAD-based target import (Phase 3 - STL volume)</li>
         <li>✅ Steps & operations model with UI (Phase 1.3)</li>
-        <li>⬜ CAD-based target import (Phase 3)</li>
         <li>⬜ Geometric step transforms & storyboard drawings</li>
+        <li>⬜ Auto-planned transformation sequence from stock to target</li>
       </ul>
     </section>
   </main>

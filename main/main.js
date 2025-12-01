@@ -13,6 +13,7 @@ import {
   getOperationLabel,
   getOperationMassChangeType,
 } from "./modules/operations.js";
+import { parseSTLFile } from "./modules/cadParser.js";
 
 // Simple app state
 const appState = {
@@ -20,6 +21,8 @@ const appState = {
   targetShape: null,
   steps: [],
 };
+
+/* ----------------- HELLO BUTTON ----------------- */
 
 function setupHelloButton() {
   const button = document.getElementById("hello-button");
@@ -36,6 +39,8 @@ function setupHelloButton() {
     console.log("[ForgeAI Hello]", message);
   });
 }
+
+/* ----------------- STARTING STOCK ----------------- */
 
 function setupStockForm() {
   console.log("[StockForm] Setting up stock form…");
@@ -170,8 +175,8 @@ function setupStockForm() {
 
       console.log("[StockForm] Starting stock set:", { stock, volume });
 
-      // Re-render steps volume summary now that we know starting volume
       renderSteps();
+      updateTargetComparison();
     } catch (err) {
       console.error("[StockForm] Unexpected error:", err);
       errorEl.textContent =
@@ -180,8 +185,83 @@ function setupStockForm() {
   });
 }
 
+/* ----------------- TARGET SHAPE HELPERS ----------------- */
+
+function updateTargetComparison() {
+  const compareEl = document.getElementById("target-compare");
+  if (!compareEl) return;
+
+  const { startingStock, targetShape } = appState;
+
+  if (!targetShape) {
+    compareEl.textContent = "No target shape set yet.";
+    return;
+  }
+
+  if (!startingStock) {
+    compareEl.textContent =
+      "No starting stock set yet. Once you define it, the app will compare volumes here.";
+    return;
+  }
+
+  const stockVolume = startingStock.computeVolume();
+  const stockUnits = startingStock.units;
+  const targetUnits = targetShape.units;
+
+  if (!Number.isFinite(stockVolume)) {
+    compareEl.textContent =
+      "Starting stock volume is not available; cannot compare.";
+    return;
+  }
+
+  if (stockUnits !== targetUnits) {
+    compareEl.textContent =
+      "Starting stock and target shape use different units, so volume comparison is approximate.";
+    return;
+  }
+
+  const diff = stockVolume - targetShape.volume;
+  const diffAbs = Math.abs(diff);
+
+  if (diff < 0) {
+    compareEl.textContent =
+      `⚠️ Target requires ${diffAbs.toFixed(
+        3
+      )} ${targetUnits}³ more material than your starting stock. ` +
+      `Final volume must be ≤ starting volume, so this plan is impossible without adding material (e.g., welds).`;
+  } else {
+    compareEl.textContent =
+      `Starting stock has ${diffAbs.toFixed(
+        3
+      )} ${targetUnits}³ more volume than the target shape. ` +
+      `Final volume will need to be ≤ starting volume, so you must remove or redistribute this material.`;
+  }
+}
+
+function applyTargetShape(targetShape, prefixSummaryText = "") {
+  const summaryEl = document.getElementById("target-summary");
+  if (!summaryEl) {
+    console.error("[TargetShape] target-summary element missing.");
+    return;
+  }
+
+  appState.targetShape = targetShape;
+
+  const baseText = targetShape.describe();
+  summaryEl.textContent = prefixSummaryText
+    ? `${prefixSummaryText}\n${baseText}`
+    : baseText;
+
+  console.log("[TargetShape] Target set:", targetShape);
+
+  updateTargetComparison();
+  renderSteps();
+}
+
+/* ----------------- MANUAL TARGET SHAPE FORM ----------------- */
+
 function setupTargetShapeForm() {
-  console.log("[TargetShape] Setting up target shape form…");
+  console.log("[TargetShape] Setting up manual target shape form…");
 
   const labelInput = document.getElementById("target-label");
   const volumeInput = document.getElementById("target-volume");
@@ -189,8 +269,6 @@ function setupTargetShapeForm() {
   const notesInput = document.getElementById("target-notes");
   const setButton = document.getElementById("target-set-btn");
   const errorEl = document.getElementById("target-error");
-  const summaryEl = document.getElementById("target-summary");
-  const compareEl = document.getElementById("target-compare");
 
   if (
     !labelInput ||
@@ -198,22 +276,18 @@ function setupTargetShapeForm() {
     !unitsSelect ||
     !notesInput ||
     !setButton ||
-    !errorEl ||
-    !summaryEl ||
-    !compareEl
+    !errorEl
   ) {
     console.error(
-      "[TargetShape] One or more target-shape elements are missing from the DOM."
+      "[TargetShape] One or more manual target-shape elements are missing from the DOM."
     );
     return;
   }
 
   setButton.addEventListener("click", () => {
-    console.log("[TargetShape] Set target clicked");
+    console.log("[TargetShape] Manual Set target clicked");
 
     errorEl.textContent = "";
-    summaryEl.textContent = "";
-    compareEl.textContent = "";
 
     const label = (labelInput.value || "").trim();
     const volume = parseFloat(volumeInput.value);
@@ -239,51 +313,14 @@ function setupTargetShapeForm() {
 
     try {
       const targetShape = new TargetShape({
-        sourceType: "manual", // CAD will be a later phase
+        sourceType: "manual",
         label,
         volume,
         units,
         notes,
       });
 
-      appState.targetShape = targetShape;
-
-      const summaryText = targetShape.describe();
-      summaryEl.textContent = summaryText;
-      console.log("[TargetShape] Target set:", targetShape);
-
-      // Compare to starting stock volume if possible
-      if (appState.startingStock) {
-        const stockVolume = appState.startingStock.computeVolume();
-        const stockUnits = appState.startingStock.units;
-
-        if (stockUnits === targetShape.units && Number.isFinite(stockVolume)) {
-          const diff = stockVolume - targetShape.volume;
-          const diffAbs = Math.abs(diff);
-
-          if (diff < 0) {
-            compareEl.textContent =
-              `⚠️ Target requires ${diffAbs.toFixed(
-                3
-              )} ${units}³ more material than your starting stock. ` +
-              `Final volume must be ≤ starting volume, so this plan is impossible without adding material.`;
-          } else {
-            compareEl.textContent =
-              `Starting stock has ${diffAbs.toFixed(
-                3
-              )} ${units}³ more volume than the target shape. ` +
-              `Final volume will need to be ≤ starting volume, so you must remove or redistribute this material.`;
-          }
-        } else {
-          compareEl.textContent =
-            "Starting stock and target shape use different units, so volume comparison is approximate.";
-        }
-      } else {
-        compareEl.textContent =
-          "No starting stock set yet. Once you define it, the app will compare volumes here.";
-      }
-
-      renderSteps();
+      applyTargetShape(targetShape);
     } catch (err) {
       console.error("[TargetShape] Unexpected error:", err);
       errorEl.textContent =
@@ -292,9 +329,83 @@ function setupTargetShapeForm() {
   });
 }
 
-/**
- * Renders the list of steps and the current volume budget summary.
- */
+/* ----------------- CAD IMPORT (STL) ----------------- */
+
+function setupCadImport() {
+  console.log("[CAD] Setting up CAD/STL import…");
+
+  const fileInput = document.getElementById("cad-file");
+  const unitsSelect = document.getElementById("cad-units");
+  const labelInput = document.getElementById("cad-label");
+  const loadButton = document.getElementById("cad-load-btn");
+  const errorEl = document.getElementById("cad-error");
+
+  if (!fileInput || !unitsSelect || !labelInput || !loadButton || !errorEl) {
+    console.error("[CAD] One or more CAD UI elements are missing.");
+    return;
+  }
+
+  loadButton.addEventListener("click", async () => {
+    errorEl.textContent = "";
+
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      errorEl.textContent = "Please choose an STL file to import.";
+      return;
+    }
+
+    const filename = file.name || "Unnamed STL";
+    const ext = filename.split(".").pop().toLowerCase();
+    if (ext !== "stl") {
+      errorEl.textContent =
+        "Currently only STL files are supported for CAD import.";
+      return;
+    }
+
+    const units = unitsSelect.value || "in";
+    const labelFromInput = (labelInput.value || "").trim();
+    const label = labelFromInput || filename;
+
+    try {
+      console.log("[CAD] Parsing STL file…", filename);
+      const result = await parseSTLFile(file);
+
+      const { volume, triangleCount, format } = result;
+
+      if (!Number.isFinite(volume) || volume <= 0) {
+        errorEl.textContent =
+          "Could not compute a valid volume from the STL file.";
+        return;
+      }
+
+      const targetShape = new TargetShape({
+        sourceType: "cad",
+        label,
+        volume,
+        units,
+        notes: "",
+        metadata: {
+          filename,
+          triangleCount,
+          format,
+        },
+      });
+
+      const prefix = `Loaded CAD (STL): ${filename}\nTriangles: ${triangleCount} · Format: ${format}\nRaw volume ≈ ${volume.toFixed(
+        3
+      )} ${units}³`;
+
+      applyTargetShape(targetShape, prefix);
+    } catch (err) {
+      console.error("[CAD] Error parsing STL:", err);
+      errorEl.textContent =
+        "An error occurred while reading the STL file. Make sure it is a valid STL.";
+    }
+  });
+}
+
+/* ----------------- STEPS & VOLUME BUDGET ----------------- */
+
 function renderSteps() {
   const listEl = document.getElementById("steps-list");
   const summaryEl = document.getElementById("steps-volume-summary");
@@ -524,11 +635,14 @@ function setupStepsUI() {
   renderSteps();
 }
 
+/* ----------------- INIT ----------------- */
+
 function initApp() {
   console.log("Smithing Storyboarder booting up…");
   setupHelloButton();
   setupStockForm();
   setupTargetShapeForm();
+  setupCadImport();
   setupStepsUI();
 }
 
