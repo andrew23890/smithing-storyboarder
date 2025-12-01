@@ -19,6 +19,11 @@ import {
   barStateFromStock,
   applyStepsToBar,
 } from "./modules/geometryEngine.js";
+// NEW: CAD preview module (to be created next)
+import {
+  setupCadPreviewCanvas,
+  startCadPreviewFromFile,
+} from "./modules/cadPreview.js";
 
 // Simple app state
 const appState = {
@@ -52,7 +57,7 @@ function setupStockForm() {
 
   const materialSelect = document.getElementById("stock-material");
   const shapeSelect = document.getElementById("stock-shape");
-  const dimAInput = document.getElementById("stock-dim-a");
+  const dimAInput = document.getElementElementById("stock-dim-a");
   const dimBInput = document.getElementById("stock-dim-b");
   const dimALabel = document.getElementById("dim-a-label");
   const dimBLabel = document.getElementById("dim-b-label");
@@ -530,6 +535,10 @@ function setupCadImport() {
         3
       )} ${units}³`;
 
+      // NEW: kick off the CAD preview module using the same File object
+      // (cadPreview.js will handle its own parsing / canvas drawing)
+      startCadPreviewFromFile(file);
+
       applyTargetShape(targetShape, prefix);
     } catch (err) {
       console.error("[CAD] Error parsing STL:", err);
@@ -835,6 +844,8 @@ function initApp() {
   setupStockForm();
   setupTargetShapeForm();
   setupCadImport();
+  // NEW: initialize the CAD preview canvas (no-op if the canvas isn’t present)
+  setupCadPreviewCanvas();
   setupStepsUI();
   setupGeometrySimulationUI();
 }

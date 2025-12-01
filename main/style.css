@@ -15,139 +15,128 @@ body {
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  line-height: 1.5;
-  color: #111827; /* slate-900-ish */
-  background: radial-gradient(circle at top left, #f9fafb, #e5e7eb);
+  background: radial-gradient(circle at top, #f97316 0, #111827 55%);
+  color: #111827;
 }
 
 /* Layout */
 .app-header {
-  padding: 1.5rem 1rem;
+  padding: 1.25rem 1rem 0.5rem;
   text-align: center;
-  border-bottom: 1px solid #e5e7eb;
-  background: rgba(249, 250, 251, 0.9);
-  backdrop-filter: blur(6px);
+  color: #f9fafb;
 }
 
 .app-header h1 {
-  font-size: 1.8rem;
-  letter-spacing: 0.05em;
+  font-size: 1.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .app-tagline {
   margin-top: 0.25rem;
-  color: #6b7280; /* gray-500 */
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  opacity: 0.9;
 }
 
 .app-main {
   max-width: 1100px;
-  margin: 1.5rem auto;
-  padding: 0 1rem 2rem;
+  margin: 0 auto;
+  padding: 0.75rem 0.75rem 1.5rem;
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr);
-  grid-template-rows: auto auto auto;
-  gap: 1.25rem;
-}
-
-.app-main > .card:first-child {
-  grid-column: 1 / -1; /* Starting stock card spans both columns */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
 }
 
 .app-footer {
-  padding: 0.75rem 1rem;
   text-align: center;
-  color: #6b7280;
+  padding: 0.5rem 0.75rem 1rem;
   font-size: 0.8rem;
-  border-top: 1px solid #e5e7eb;
+  color: #e5e7eb;
+  opacity: 0.85;
 }
 
-/* Cards */
+/* Card */
 .card {
-  background: #ffffff;
-  border-radius: 0.75rem;
-  padding: 1rem 1.25rem 1.25rem;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-  border: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  border-radius: 1rem;
+  padding: 0.9rem 0.9rem 1rem;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.card + .card {
+  margin-top: 0.1rem;
 }
 
 .card h2 {
-  font-size: 1.25rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
 }
 
 .card-intro {
-  margin-bottom: 0.9rem;
-  color: #4b5563; /* gray-600 */
-  font-size: 0.95rem;
-}
-
-/* Form grid */
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #4b5563;
   margin-bottom: 0.75rem;
 }
 
+/* Grid for fields */
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  align-items: flex-start;
+}
+
+/* Steps grid tweaks */
+.steps-form-grid {
+  margin-bottom: 0.5rem;
+}
+
+/* Field basics */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
 }
 
 .field label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #374151;
+  color: #111827;
+  margin-bottom: 0.15rem;
 }
 
 .field input,
-.field select {
-  padding: 0.45rem 0.55rem;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  font-size: 0.9rem;
-  outline: none;
-  background-color: #f9fafb;
-}
-
+.field select,
 .field textarea {
-  padding: 0.45rem 0.55rem;
-  border-radius: 0.5rem;
+  font: inherit;
+  border-radius: 0.6rem;
   border: 1px solid #d1d5db;
-  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
   outline: none;
-  background-color: #f9fafb;
-  resize: vertical;
-  min-height: 3rem;
+  background-color: #fefefe;
 }
 
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
   border-color: #f97316;
-  box-shadow: 0 0 0 1px #fed7aa;
-  background-color: #ffffff;
+  box-shadow: 0 0 0 1px #f97316;
 }
 
-/* Field-level inline errors (for starting stock validation) */
-.field-error-text {
-  font-size: 0.8rem;
-  min-height: 0.95rem;
-  color: #b91c1c; /* red-700 */
+.field textarea {
+  min-height: 2.5rem;
+  resize: vertical;
 }
 
-/* Highlight invalid fields */
-.field.field-invalid input,
-.field.field-invalid select {
-  border-color: #b91c1c;
-  box-shadow: 0 0 0 1px #fecaca;
-  background-color: #fef2f2;
+.field-help {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: #6b7280;
 }
 
+/* We leave this for JS to toggle visibility */
 .field-secondary {
-  /* This one can be hidden by JS when not needed (e.g., square bar) */
 }
 
 /* Primary & secondary buttons */
@@ -167,6 +156,18 @@ body {
     filter 0.1s ease;
 }
 
+.primary-btn:hover,
+#hello-button:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 8px 18px rgba(234, 88, 12, 0.45);
+}
+
+.primary-btn:active,
+#hello-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
+}
+
 .secondary-btn {
   margin-top: 0.5rem;
   padding: 0.6rem 1.1rem;
@@ -176,39 +177,106 @@ body {
   font-weight: 500;
   cursor: pointer;
   background: #ffffff;
-  color: #374151;
+  color: #111827;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.08);
   transition: transform 0.05s ease, box-shadow 0.05s ease,
-    filter 0.1s ease;
+    background-color 0.1s ease;
 }
 
-.primary-btn:hover,
-#hello-button:hover,
 .secondary-btn:hover {
-  filter: brightness(1.05);
+  background-color: #f3f4f6;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
-.primary-btn:active,
-#hello-button:active,
 .secondary-btn:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.1);
 }
 
-/* Hello output area */
-.hello-output {
-  margin-top: 0.75rem;
-  min-height: 1.25rem;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.9rem;
-  color: #374151; /* gray-700 */
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  background: #f9fafb;
+/* Error & helper text */
+.error-message {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+
+/* Stock summary & general summary boxes */
+.stock-summary {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.6rem;
   border: 1px dashed #d1d5db;
+  font-size: 0.86rem;
+  color: #111827;
+  background: #fefce8;
 }
 
-/* Status list */
+/* Steps list */
+.steps-list {
+  margin-top: 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+  padding: 0.4rem 0.6rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.steps-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.3rem 0.1rem;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.86rem;
+}
+
+.steps-list-item:last-child {
+  border-bottom: none;
+}
+
+.steps-list-item-main {
+  flex: 1 1 auto;
+  padding-right: 0.4rem;
+}
+
+.steps-list-item-meta {
+  flex: 0 0 auto;
+  text-align: right;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.steps-delete-btn {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #fecaca;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+/* Hello / debug */
+.hello-output {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.6rem;
+  background-color: #f3f4f6;
+  font-size: 0.85rem;
+}
+
+/* Status box */
+.status-box {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.8rem;
+  border: 1px dashed #f97316;
+  box-shadow: 0 0 0 1px #fed7aa;
+  background-color: #ffffff;
+}
+
 .status-list {
   list-style: none;
   margin-top: 0.5rem;
@@ -218,93 +286,15 @@ body {
   margin-top: 0.25rem;
 }
 
-/* Stock summary & errors */
-.stock-summary {
-  margin-top: 0.5rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.5rem;
-  background-color: #f9fafb;
-  border: 1px solid #e5e7eb;
-  font-size: 0.9rem;
-  color: #111827;
-  white-space: pre-line; /* allow line breaks in JS text content */
+/* Roadmap */
+.roadmap-list {
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.86rem;
 }
 
-.error-message {
-  margin-top: 0.4rem;
-  min-height: 1.1rem;
-  font-size: 0.85rem;
-  color: #b91c1c; /* red-700 */
-}
-
-/* Steps */
-.steps-form-grid {
-  margin-top: 0.5rem;
-}
-
-.steps-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.steps-list {
-  margin-top: 0.75rem;
-}
-
-.steps-empty {
-  font-size: 0.9rem;
-  color: #6b7280;
-}
-
-.steps-ul {
-  list-style: none;
-  padding-left: 0;
-}
-
-.steps-item {
-  padding: 0.35rem 0;
-  border-bottom: 1px dashed #e5e7eb;
-  font-size: 0.9rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-
-.steps-item strong {
-  font-weight: 600;
-}
-
-.steps-item small {
-  color: #6b7280;
-}
-
-.steps-delete-btn {
-  border: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  cursor: pointer;
-  background-color: #fee2e2;
-  color: #b91c1c;
-}
-
-/* Responsive tweaks */
-@media (max-width: 768px) {
-  .app-main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .app-main > .card:first-child {
-    grid-column: auto;
-  }
-
-  .steps-item {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.roadmap-list li + li {
+  margin-top: 0.1rem;
 }
 
 .subheading {
@@ -319,4 +309,63 @@ body {
   margin: 0.75rem 0;
   border: none;
   border-top: 1px dashed #e5e7eb;
+}
+
+/* CAD preview canvas */
+.cad-preview-wrapper {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px dashed #e5e7eb;
+  background-color: #f9fafb;
+}
+
+#cad-preview-canvas {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: 220px;
+  margin: 0.5rem auto;
+  border-radius: 0.5rem;
+  background-color: #111827;
+}
+
+.helper-text {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+/* Responsive tweaks */
+@media (min-width: 720px) {
+  .app-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .card:nth-of-type(1),
+  .card:nth-of-type(2) {
+    grid-column: span 1;
+  }
+
+  .card:nth-of-type(3) {
+    grid-column: span 2;
+  }
+
+  .card:nth-of-type(4),
+  .card:nth-of-type(5) {
+    grid-column: span 1;
+  }
+
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .steps-form-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 980px) {
+  .app-main {
+    padding: 1rem 0 2rem;
+  }
 }
