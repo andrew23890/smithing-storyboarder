@@ -25,21 +25,25 @@
         <div class="field">
           <label for="stock-material">Material</label>
           <select id="stock-material">
+            <option value="" disabled hidden>Select material…</option>
             <option value="mild steel" selected>Mild steel</option>
             <option value="tool steel">Tool steel</option>
             <option value="stainless">Stainless steel</option>
             <option value="other">Other / unknown</option>
           </select>
+          <p id="stock-material-error" class="field-error-text"></p>
         </div>
 
         <div class="field">
           <label for="stock-shape">Cross-section shape</label>
           <select id="stock-shape">
+            <option value="" disabled hidden>Select shape…</option>
             <option value="square" selected>Square bar</option>
             <option value="round">Round bar</option>
             <option value="flat">Flat bar</option>
             <option value="rectangle">Rectangular bar</option>
           </select>
+          <p id="stock-shape-error" class="field-error-text"></p>
         </div>
 
         <div class="field">
@@ -51,6 +55,7 @@
             step="0.001"
             placeholder="e.g. 0.625 for 5/8"
           />
+          <p id="stock-dim-a-error" class="field-error-text"></p>
         </div>
 
         <div class="field field-secondary" id="field-dim-b">
@@ -62,6 +67,7 @@
             step="0.001"
             placeholder="e.g. 0.25"
           />
+          <p id="stock-dim-b-error" class="field-error-text"></p>
         </div>
 
         <div class="field">
@@ -73,15 +79,18 @@
             step="0.01"
             placeholder="e.g. 30"
           />
+          <p id="stock-length-error" class="field-error-text"></p>
         </div>
 
         <div class="field">
           <label for="stock-units">Units</label>
           <select id="stock-units">
+            <option value="" disabled hidden>Select units…</option>
             <option value="in" selected>Inches</option>
             <option value="mm">Millimeters</option>
             <option value="cm">Centimeters</option>
           </select>
+          <p id="stock-units-error" class="field-error-text"></p>
         </div>
       </div>
 

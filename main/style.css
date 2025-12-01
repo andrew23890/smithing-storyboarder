@@ -131,6 +131,21 @@ body {
   background-color: #ffffff;
 }
 
+/* Field-level inline errors (for starting stock validation) */
+.field-error-text {
+  font-size: 0.8rem;
+  min-height: 0.95rem;
+  color: #b91c1c; /* red-700 */
+}
+
+/* Highlight invalid fields */
+.field.field-invalid input,
+.field.field-invalid select {
+  border-color: #b91c1c;
+  box-shadow: 0 0 0 1px #fecaca;
+  background-color: #fef2f2;
+}
+
 .field-secondary {
   /* This one can be hidden by JS when not needed (e.g., square bar) */
 }

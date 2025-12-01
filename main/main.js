@@ -115,44 +115,174 @@ function setupStockForm() {
   shapeSelect.addEventListener("change", updateDimensionLabels);
   updateDimensionLabels(); // Initialize on load
 
+  function clearStockFieldErrors() {
+    // Clear inline field error text
+    const fieldErrorEls = [
+      "stock-material-error",
+      "stock-shape-error",
+      "stock-dim-a-error",
+      "stock-dim-b-error",
+      "stock-length-error",
+      "stock-units-error",
+    ];
+    fieldErrorEls.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "";
+    });
+
+    // Remove field-invalid highlighting
+    document
+      .querySelectorAll(".field.field-invalid")
+      .forEach((fieldEl) => fieldEl.classList.remove("field-invalid"));
+  }
+
+  function setStockFieldError(inputEl, errorId, message) {
+    const fieldEl = inputEl && inputEl.closest(".field");
+    const errorEl = document.getElementById(errorId);
+    if (errorEl) errorEl.textContent = message;
+    if (fieldEl) fieldEl.classList.add("field-invalid");
+  }
+
   calcButton.addEventListener("click", () => {
     console.log("[StockForm] Calculate clicked");
 
+    // Clear previous messages
+    clearStockFieldErrors();
     errorEl.textContent = "";
     summaryEl.textContent = "";
 
-    const material = materialSelect.value || "unknown";
-    const shape = shapeSelect.value;
+    let hasError = false;
 
-    const dimA = parseFloat(dimAInput.value);
-    const dimB =
-      shape === "flat" || shape === "rectangle"
-        ? parseFloat(dimBInput.value)
-        : null;
-    const length = parseFloat(lengthInput.value);
-    const units = unitsSelect.value || "in";
-
-    const errors = [];
-
-    if (!(dimA > 0)) {
-      errors.push("Primary dimension must be greater than 0.");
+    // Material (required)
+    const materialRaw = materialSelect.value;
+    let material = materialRaw;
+    if (!materialRaw) {
+      hasError = true;
+      setStockFieldError(
+        materialSelect,
+        "stock-material-error",
+        "Please choose a material."
+      );
     }
 
-    if ((shape === "flat" || shape === "rectangle") && !(dimB > 0)) {
-      errors.push("Thickness must be greater than 0 for flat/rectangular stock.");
+    // Shape (required)
+    const shapeRaw = shapeSelect.value;
+    const shape = shapeRaw;
+    if (!shapeRaw) {
+      hasError = true;
+      setStockFieldError(
+        shapeSelect,
+        "stock-shape-error",
+        "Please choose a cross-section shape."
+      );
     }
 
-    if (!(length > 0)) {
-      errors.push("Length must be greater than 0.");
+    // Primary dimension (required, > 0)
+    const dimARaw = dimAInput.value.trim();
+    let dimA = null;
+    if (!dimARaw) {
+      hasError = true;
+      setStockFieldError(
+        dimAInput,
+        "stock-dim-a-error",
+        "Please enter a primary dimension."
+      );
+    } else {
+      const parsed = parseFloat(dimARaw);
+      if (!(parsed > 0)) {
+        hasError = true;
+        setStockFieldError(
+          dimAInput,
+          "stock-dim-a-error",
+          "Must be a number greater than 0."
+        );
+      } else {
+        dimA = parsed;
+      }
     }
 
-    if (errors.length > 0) {
-      const msg = errors.join(" ");
-      console.warn("[StockForm] Validation errors:", msg);
-      errorEl.textContent = msg;
-      return;
+    // Secondary dimension (only for flat/rectangle, > 0)
+    const needsDimB = shape === "flat" || shape === "rectangle";
+    let dimB = null;
+    if (needsDimB) {
+      const dimBRaw = dimBInput.value.trim();
+      if (!dimBRaw) {
+        hasError = true;
+        setStockFieldError(
+          dimBInput,
+          "stock-dim-b-error",
+          "Please enter a thickness for flat/rectangular stock."
+        );
+      } else {
+        const parsed = parseFloat(dimBRaw);
+        if (!(parsed > 0)) {
+          hasError = true;
+          setStockFieldError(
+            dimBInput,
+            "stock-dim-b-error",
+            "Thickness must be a number greater than 0."
+          );
+        } else {
+          dimB = parsed;
+        }
+      }
+    } else {
+      dimB = null;
     }
 
+    // Length (required, > 0)
+    const lengthRaw = lengthInput.value.trim();
+    let length = null;
+    if (!lengthRaw) {
+      hasError = true;
+      setStockFieldError(
+        lengthInput,
+        "stock-length-error",
+        "Please enter a length."
+      );
+    } else {
+      const parsed = parseFloat(lengthRaw);
+      if (!(parsed > 0)) {
+        hasError = true;
+        setStockFieldError(
+          lengthInput,
+          "stock-length-error",
+          "Length must be a number greater than 0."
+        );
+      } else {
+        length = parsed;
+      }
+    }
+
+    // Units (required, basic consistency check)
+    const unitsRaw = unitsSelect.value;
+    let units = unitsRaw;
+    if (!unitsRaw) {
+      hasError = true;
+      setStockFieldError(
+        unitsSelect,
+        "stock-units-error",
+        "Please choose units."
+      );
+    } else {
+      const allowedUnits = ["in", "mm", "cm"];
+      if (!allowedUnits.includes(unitsRaw)) {
+        hasError = true;
+        setStockFieldError(
+          unitsSelect,
+          "stock-units-error",
+          "Units must be inches, millimeters, or centimeters."
+        );
+      }
+    }
+
+    if (hasError) {
+      errorEl.textContent = "Please fix the highlighted fields.";
+      console.warn("[StockForm] Validation failed; stock not created.");
+      return; // Prevent stock creation when invalid
+    }
+
+    // If we reach here, all fields are valid and parsed
     try {
       const stock = new Stock({
         material,
