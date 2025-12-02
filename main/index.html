@@ -13,34 +13,53 @@
   </header>
 
   <main class="app-main">
+    <!-- Quick Hello / Wiring Check -->
+    <section class="card">
+      <h2>ForgeAI Hello</h2>
+      <p class="card-intro">
+        Click the button to confirm that the app wiring is working and the JS is loaded.
+      </p>
+      <button id="hello-button" class="primary-btn">Say hello</button>
+      <p id="hello-output" class="hello-output"></p>
+    </section>
+
     <!-- Starting Stock Card -->
     <section class="card">
       <h2>Starting Stock</h2>
       <p class="card-intro">
-        Tell the app what you’re starting with. We’ll compute the stock volume
-        so we can keep a volume budget as you forge.
+        Tell the app what you’re starting with. We’ll compute the stock volume and use it
+        as your initial material budget.
       </p>
 
       <div class="form-grid">
+        <!-- Material -->
         <div class="field">
           <label for="material">Material</label>
           <select id="material">
-            <option value="mild_steel" selected>Mild steel</option>
-            <option value="tool_steel">Tool steel (approx)</option>
-            <option value="other">Other / unknown</option>
+            <option value="">Select material…</option>
+            <option value="mild-steel">Mild steel</option>
+            <option value="tool-steel">Tool steel</option>
+            <option value="stainless-steel">Stainless steel</option>
+            <option value="wrought-iron">Wrought iron</option>
+            <option value="unknown">Unknown / other</option>
           </select>
+          <p id="stock-material-error" class="field-error-message"></p>
         </div>
 
+        <!-- Shape -->
         <div class="field">
-          <label for="stock-shape">Stock shape</label>
+          <label for="stock-shape">Cross-section shape</label>
           <select id="stock-shape">
-            <option value="round" selected>Round bar</option>
+            <option value="">Select shape…</option>
             <option value="square">Square bar</option>
-            <option value="flat">Flat bar / plate</option>
-            <option value="rectangle">Rectangular bar</option>
+            <option value="round">Round bar</option>
+            <option value="flat">Flat / rectangular bar</option>
+            <option value="rectangle">Rectangular (thickness × width)</option>
           </select>
+          <p id="stock-shape-error" class="field-error-message"></p>
         </div>
 
+        <!-- Primary dimension (dim-a) -->
         <div class="field">
           <label for="dim-a">Primary dimension</label>
           <input
@@ -50,12 +69,12 @@
             step="0.001"
             placeholder="e.g. 0.625"
           />
-          <small class="field-help" id="dim-a-help">
-            For round: diameter. For square: side. For flat/rect: thickness.
-          </small>
+          <p class="field-hint">Side, diameter, or thickness depending on shape.</p>
+          <p id="stock-dim-a-error" class="field-error-message"></p>
         </div>
 
-        <div class="field field-secondary" id="dim-b-wrapper">
+        <!-- Secondary dimension (dim-b) - only for flat/rectangle -->
+        <div class="field" id="dim-b-wrapper">
           <label for="dim-b">Secondary dimension</label>
           <input
             id="dim-b"
@@ -64,11 +83,11 @@
             step="0.001"
             placeholder="e.g. 1.5"
           />
-          <small class="field-help">
-            Only used for flat/rectangular stock (width).
-          </small>
+          <p class="field-hint">Width for flat or rectangular stock.</p>
+          <p id="stock-dim-b-error" class="field-error-message"></p>
         </div>
 
+        <!-- Length -->
         <div class="field">
           <label for="length">Length</label>
           <input
@@ -78,39 +97,43 @@
             step="0.001"
             placeholder="e.g. 30"
           />
+          <p id="stock-length-error" class="field-error-message"></p>
         </div>
 
+        <!-- Units -->
         <div class="field">
           <label for="stock-units">Units</label>
           <select id="stock-units">
-            <option value="in" selected>Inches (in)</option>
-            <option value="mm">Millimeters (mm)</option>
-            <option value="cm">Centimeters (cm)</option>
+            <option value="">Select units…</option>
+            <option value="in">Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
           </select>
+          <p id="stock-units-error" class="field-error-message"></p>
         </div>
       </div>
 
-      <button id="stock-set-btn" type="button" class="primary-btn">
-        Set Starting Stock
-      </button>
+      <div class="card-actions">
+        <button id="stock-set-btn" class="primary-btn">
+          Set starting stock
+        </button>
+      </div>
 
-      <p id="stock-error" class="error-message" aria-live="polite"></p>
-      <div id="stock-summary" class="stock-summary" aria-live="polite"></div>
+      <p id="stock-error" class="card-error"></p>
+      <div id="stock-summary" class="stock-summary"></div>
     </section>
 
-    <!-- Target Shape Card -->
+    <!-- Target Shape (Manual) -->
     <section class="card">
-      <h2>Target Shape</h2>
+      <h2>Target Shape (Manual)</h2>
       <p class="card-intro">
-        You can define a target by volume manually, or import a 3D shape (STL)
-        and let the app compute its volume.
+        Describe your desired final piece using an approximate volume. This doesn’t need
+        to be perfect—just good enough to reason about the material budget.
       </p>
 
-      <!-- Manual volume section -->
-      <h3 class="subheading">Manual target volume</h3>
       <div class="form-grid">
         <div class="field">
-          <label for="target-label">Target name / label</label>
+          <label for="target-label">Name / label</label>
           <input
             id="target-label"
             type="text"
@@ -132,200 +155,207 @@
         <div class="field">
           <label for="target-units">Units</label>
           <select id="target-units">
-            <option value="in" selected>Inches³ match stock (in)</option>
-            <option value="mm">Millimeters³ match stock (mm)</option>
-            <option value="cm">Centimeters³ match stock (cm)</option>
+            <option value="in">Inches³</option>
+            <option value="mm">Millimeters³</option>
+            <option value="cm">Centimeters³</option>
           </select>
         </div>
 
-        <div class="field">
+        <div class="field field-span-2">
           <label for="target-notes">Notes (optional)</label>
           <textarea
             id="target-notes"
-            placeholder="Any notes about where this volume estimate came from."
+            rows="2"
+            placeholder="Any extra notes, proportions, or reminders about this target piece."
           ></textarea>
         </div>
       </div>
 
-      <button id="target-set-btn" type="button" class="primary-btn">
-        Set Manual Target Shape
-      </button>
+      <div class="card-actions">
+        <button id="target-set-btn" class="primary-btn">
+          Set manual target shape
+        </button>
+      </div>
 
-      <p id="target-error" class="error-message" aria-live="polite"></p>
+      <p id="target-error" class="card-error"></p>
+      <div id="target-summary" class="stock-summary"></div>
+      <div id="target-compare" class="stock-summary"></div>
+    </section>
 
-      <hr class="section-divider" />
+    <!-- Target Shape (CAD / STL Import) -->
+    <section class="card">
+      <h2>Target Shape (CAD / STL Import)</h2>
+      <p class="card-intro">
+        Import an STL file to estimate its volume and use it as your target shape.
+        A simple spinning preview will appear in the canvas below.
+      </p>
 
-      <!-- CAD / STL section -->
-      <h3 class="subheading">Target from CAD (STL)</h3>
       <div class="form-grid">
         <div class="field">
           <label for="cad-file">STL file</label>
-          <input id="cad-file" type="file" accept=".stl,.STL" />
+          <input id="cad-file" type="file" accept=".stl" />
         </div>
 
         <div class="field">
-          <label for="cad-label">Name / label (optional)</label>
+          <label for="cad-units">STL units</label>
+          <select id="cad-units">
+            <option value="in">Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+          </select>
+        </div>
+
+        <div class="field field-span-2">
+          <label for="cad-label">Label override (optional)</label>
           <input
             id="cad-label"
             type="text"
-            placeholder="If blank, we’ll use the file name."
+            placeholder="If left blank, the filename will be used."
           />
         </div>
-
-        <div class="field">
-          <label for="cad-units">Units</label>
-          <select id="cad-units">
-            <option value="in" selected>Inches³ match stock (in)</option>
-            <option value="mm">Millimeters³ match stock (mm)</option>
-            <option value="cm">Centimeters³ match stock (cm)</option>
-          </select>
-        </div>
       </div>
 
-      <button id="cad-load-btn" type="button" class="primary-btn">
-        Load STL and set target
-      </button>
+      <div class="card-actions">
+        <button id="cad-load-btn" class="primary-btn">
+          Load STL as target
+        </button>
+      </div>
 
-      <p id="cad-error" class="error-message" aria-live="polite"></p>
+      <p id="cad-error" class="card-error"></p>
 
-      <!-- Optional CAD visual preview -->
-      <div class="cad-preview-wrapper">
-        <h3 class="subheading">Visual preview (rough)</h3>
-        <canvas
-          id="cad-preview-canvas"
-          width="320"
-          height="220"
-          aria-label="Approximate preview of the imported CAD shape"
-        ></canvas>
-        <p id="cad-preview-hint" class="helper-text">
-          Load an STL to see a simple spinning point-cloud preview. It&apos;s just a sanity check, not exact CAD.
+      <div class="cad-preview-panel">
+        <div class="cad-preview-canvas-wrapper">
+          <canvas id="cad-preview" width="320" height="240"></canvas>
+        </div>
+        <p class="card-note">
+          The preview is a simplified spinning wireframe to help you visually confirm the
+          imported shape. It is not a full CAD viewer.
         </p>
       </div>
-
-      <!-- Shared summary/comparison -->
-      <div id="target-summary" class="stock-summary" aria-live="polite"></div>
-      <div id="target-compare" class="stock-summary" aria-live="polite"></div>
     </section>
 
-    <!-- Forging Steps Card -->
+    <!-- Forging Steps -->
     <section class="card">
       <h2>Forging Steps</h2>
       <p class="card-intro">
-        Define each major forging step. Operations like draw out, taper, scroll,
-        twist, punch, drift, cut, weld, and more are available below. The app
-        keeps a running volume budget so your final shape never has more volume
-        than you started with (unless you add it on purpose).
+        Add the major forging operations you plan to perform. The volume budget panel
+        will help you see whether your plan matches the material you have.
       </p>
 
-      <div class="form-grid steps-form-grid">
+      <div class="steps-form-grid">
+        <!-- Operation -->
         <div class="field">
           <label for="step-operation">Operation</label>
-          <select id="step-operation"></select>
+          <select id="step-operation">
+            <!-- Populated from operations.js -->
+          </select>
         </div>
 
+        <!-- Optional length parameter -->
         <div class="field">
-          <label for="step-description">Description</label>
+          <label for="steps-param-length">Length affected (optional)</label>
           <input
-            id="step-description"
+            id="steps-param-length"
             type="text"
-            placeholder="e.g. Draw out square bar to 3/8&quot; over 6&quot;"
+            placeholder="e.g. 4&quot; tip, 2&quot; near the eye"
           />
         </div>
 
+        <!-- Optional location parameter -->
         <div class="field">
-          <label for="step-delta-volume">Volume change (ΔV)</label>
+          <label for="steps-param-location">Location on bar (optional)</label>
+          <input
+            id="steps-param-location"
+            type="text"
+            placeholder="e.g. 3&quot; from one end, center section"
+          />
+        </div>
+
+        <!-- Description -->
+        <div class="field field-span-2">
+          <label for="step-description">Description</label>
+          <textarea
+            id="step-description"
+            rows="2"
+            placeholder="Describe what you’ll do in this step in plain smith language."
+          ></textarea>
+        </div>
+
+        <!-- Volume delta -->
+        <div class="field">
+          <label id="steps-volume-delta-label" for="step-delta-volume">
+            Volume change (optional)
+          </label>
           <input
             id="step-delta-volume"
             type="number"
+            min="0"
             step="0.001"
-            placeholder="e.g. 0 for pure reshaping"
+            placeholder="0"
           />
+          <p class="field-hint">
+            If mass is conserved, leave this at 0. For cutting, punching, etc., estimate
+            how much material is removed.
+          </p>
         </div>
 
+        <!-- Units for step volume -->
         <div class="field">
-          <label for="step-units">Units</label>
+          <label for="step-units">Step volume units</label>
           <select id="step-units">
-            <option value="in" selected>Inches³ (in³)</option>
-            <option value="mm">Millimeters³ (mm³)</option>
-            <option value="cm">Centimeters³ (cm³)</option>
+            <option value="in">Inches³</option>
+            <option value="mm">Millimeters³</option>
+            <option value="cm">Centimeters³</option>
           </select>
         </div>
       </div>
 
-      <button id="step-add-btn" type="button" class="secondary-btn">
-        Add Forging Step
-      </button>
+      <div class="card-actions card-actions-spaced">
+        <button id="step-add-btn" class="primary-btn">
+          Add step
+        </button>
+        <button id="steps-clear-btn" class="secondary-btn">
+          Clear all steps
+        </button>
+      </div>
 
-      <p id="steps-error" class="error-message" aria-live="polite"></p>
+      <p id="steps-error" class="card-error"></p>
 
       <div id="steps-list" class="steps-list"></div>
-      <div
-        id="steps-volume-summary"
-        class="stock-summary"
-        aria-live="polite"
-      ></div>
+      <div id="steps-volume-summary" class="stock-summary"></div>
     </section>
 
-    <!-- Debug / Hello Card -->
+    <!-- Geometry Simulation -->
     <section class="card">
-      <h2>ForgeAI Hello / Debug</h2>
+      <h2>Geometry Simulation (v0.1)</h2>
       <p class="card-intro">
-        Small debug helpers to make sure the app is wired up correctly.
+        Run the simple geometry engine on your starting stock and steps. This treats
+        the bar as idealized segments and gives you a textual narrative of how the shape
+        changes after each step.
       </p>
 
-      <button id="hello-button" type="button">Say hello</button>
-      <p id="hello-output" class="hello-output"></p>
-
-      <div class="status-box">
-        <h3 class="subheading">App status</h3>
-        <ul class="status-list">
-          <li id="status-stock">Starting stock: (not set)</li>
-          <li id="status-target">Target shape: (not set)</li>
-          <li id="status-steps">Steps: 0 defined</li>
-        </ul>
+      <div class="card-actions">
+        <button id="geom-simulate-btn" class="primary-btn">
+          Run geometry simulation
+        </button>
       </div>
+
+      <p id="geom-error" class="card-error"></p>
+      <pre id="geom-output" class="geom-output"></pre>
     </section>
 
-    <!-- Roadmap Card (read-only) -->
+    <!-- Roadmap / Status (informational only) -->
     <section class="card">
-      <h2>Roadmap (MVP focus)</h2>
+      <h2>Roadmap Snapshot</h2>
       <p class="card-intro">
-        This is a quick snapshot of what we’re building toward. We’re currently
-        working through Phase 2 and 3 items.
+        This is a rough checklist of where the Smithing Storyboarder is heading.
+        It’s just informational and doesn’t affect the app logic.
       </p>
-
-      <h3 class="subheading">Phase 1 – Basic stock &amp; target</h3>
       <ul class="roadmap-list">
-        <li>✅ Enter starting stock dimensions and compute volume</li>
-        <li>✅ Enter a simple target volume by hand</li>
-        <li>✅ Show stock vs target volume comparison</li>
-      </ul>
-
-      <h3 class="subheading">Phase 2 – Steps &amp; volume budget</h3>
-      <ul class="roadmap-list">
-        <li>✅ Define discrete forging steps with volume changes</li>
-        <li>✅ Track cumulative volume change and remaining budget</li>
-        <li>✅ Warn when steps would exceed starting volume</li>
-      </ul>
-
-      <h3 class="subheading">Phase 3 – CAD upload &amp; target volume</h3>
-      <ul class="roadmap-list">
-        <li>✅ Import simple STL file and estimate volume</li>
-        <li>✅ Use STL-based volume as target shape</li>
-        <li>⬜ Basic visual preview of imported CAD (rough)</li>
-      </ul>
-
-      <h3 class="subheading">Phase 4 – Geometry engine (future)</h3>
-      <ul class="roadmap-list">
-        <li>⬜ Bar state representation (length, cross-section per segment)</li>
-        <li>⬜ Simple operations (draw out, taper, upset, bend, twist)</li>
-        <li>⬜ Volume-preserving checks per operation</li>
-      </ul>
-
-      <h3 class="subheading">Phase 5 – Auto-planning (future)</h3>
-      <ul class="roadmap-list">
-        <li>⬜ Geometry engine v1 (multi-segment, real tapers/scrolls)</li>
-        <li>⬜ Auto-planned transformation sequence from stock to target</li>
+        <li>✅ Phase 1: Starting stock volume &amp; basic UI</li>
+        <li>✅ Phase 2: Target shape (manual &amp; STL), steps list, simple geometry</li>
+        <li>⬜ Phase 3: Storyboard frame generator (cartoon panels)</li>
+        <li>⬜ Phase 4: Local save/load &amp; sharing</li>
       </ul>
     </section>
   </main>
