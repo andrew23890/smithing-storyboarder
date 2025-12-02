@@ -19,7 +19,6 @@ import {
   barStateFromStock,
   applyStepsToBar,
 } from "./modules/geometryEngine.js";
-// NEW: CAD preview module (to be created next)
 import {
   setupCadPreviewCanvas,
   startCadPreviewFromFile,
@@ -55,16 +54,17 @@ function setupHelloButton() {
 function setupStockForm() {
   console.log("[StockForm] Setting up stock form…");
 
-  const materialSelect = document.getElementById("stock-material");
+  // IDs aligned with index.html
+  const materialSelect = document.getElementById("material");
   const shapeSelect = document.getElementById("stock-shape");
-  const dimAInput = document.getElementElementById("stock-dim-a");
-  const dimBInput = document.getElementById("stock-dim-b");
-  const dimALabel = document.getElementById("dim-a-label");
-  const dimBLabel = document.getElementById("dim-b-label");
-  const dimBField = document.getElementById("field-dim-b");
-  const lengthInput = document.getElementById("stock-length");
+  const dimAInput = document.getElementById("dim-a");
+  const dimBInput = document.getElementById("dim-b");
+  const dimALabel = document.querySelector('label[for="dim-a"]');
+  const dimBLabel = document.querySelector('label[for="dim-b"]');
+  const dimBField = document.getElementById("dim-b-wrapper");
+  const lengthInput = document.getElementById("length");
   const unitsSelect = document.getElementById("stock-units");
-  const calcButton = document.getElementById("stock-calc-btn");
+  const calcButton = document.getElementById("stock-set-btn");
   const errorEl = document.getElementById("stock-error");
   const summaryEl = document.getElementById("stock-summary");
 
@@ -72,10 +72,6 @@ function setupStockForm() {
     !materialSelect ||
     !shapeSelect ||
     !dimAInput ||
-    !dimBInput ||
-    !dimALabel ||
-    !dimBLabel ||
-    !dimBField ||
     !lengthInput ||
     !unitsSelect ||
     !calcButton ||
@@ -92,27 +88,44 @@ function setupStockForm() {
     const shape = shapeSelect.value;
     console.log("[StockForm] Shape changed to:", shape);
 
+    if (!dimALabel || !dimBLabel) {
+      // Labels are optional; if missing we just skip relabeling.
+      return;
+    }
+
     switch (shape) {
       case "square":
         dimALabel.textContent = "Side (in chosen units)";
-        dimBField.style.display = "none";
-        dimBInput.value = "";
+        if (dimBField) {
+          dimBField.style.display = "none";
+        }
+        if (dimBInput) {
+          dimBInput.value = "";
+        }
         break;
       case "round":
         dimALabel.textContent = "Diameter (in chosen units)";
-        dimBField.style.display = "none";
-        dimBInput.value = "";
+        if (dimBField) {
+          dimBField.style.display = "none";
+        }
+        if (dimBInput) {
+          dimBInput.value = "";
+        }
         break;
       case "flat":
       case "rectangle":
-        dimALabel.textContent = "Width (in chosen units)";
-        dimBLabel.textContent = "Thickness (in chosen units)";
-        dimBField.style.display = "";
+        dimALabel.textContent = "Thickness (in chosen units)";
+        dimBLabel.textContent = "Width (in chosen units)";
+        if (dimBField) {
+          dimBField.style.display = "";
+        }
         break;
       default:
         dimALabel.textContent = "Primary dimension";
         dimBLabel.textContent = "Secondary dimension";
-        dimBField.style.display = "";
+        if (dimBField) {
+          dimBField.style.display = "";
+        }
         break;
     }
   }
@@ -121,7 +134,7 @@ function setupStockForm() {
   updateDimensionLabels(); // Initialize on load
 
   function clearStockFieldErrors() {
-    // Clear inline field error text
+    // Clear inline field error text, if those elements exist
     const fieldErrorEls = [
       "stock-material-error",
       "stock-shape-error",
@@ -143,13 +156,13 @@ function setupStockForm() {
 
   function setStockFieldError(inputEl, errorId, message) {
     const fieldEl = inputEl && inputEl.closest(".field");
-    const errorEl = document.getElementById(errorId);
-    if (errorEl) errorEl.textContent = message;
+    const fieldErrorEl = document.getElementById(errorId);
+    if (fieldErrorEl) fieldErrorEl.textContent = message;
     if (fieldEl) fieldEl.classList.add("field-invalid");
   }
 
   calcButton.addEventListener("click", () => {
-    console.log("[StockForm] Calculate clicked");
+    console.log("[StockForm] Set Starting Stock clicked");
 
     // Clear previous messages
     clearStockFieldErrors();
@@ -210,25 +223,32 @@ function setupStockForm() {
     const needsDimB = shape === "flat" || shape === "rectangle";
     let dimB = null;
     if (needsDimB) {
-      const dimBRaw = dimBInput.value.trim();
-      if (!dimBRaw) {
+      if (!dimBInput) {
         hasError = true;
-        setStockFieldError(
-          dimBInput,
-          "stock-dim-b-error",
-          "Please enter a thickness for flat/rectangular stock."
+        console.error(
+          "[StockForm] Secondary dimension required but dim-b input missing in DOM."
         );
       } else {
-        const parsed = parseFloat(dimBRaw);
-        if (!(parsed > 0)) {
+        const dimBRaw = dimBInput.value.trim();
+        if (!dimBRaw) {
           hasError = true;
           setStockFieldError(
             dimBInput,
             "stock-dim-b-error",
-            "Thickness must be a number greater than 0."
+            "Please enter a width for flat/rectangular stock."
           );
         } else {
-          dimB = parsed;
+          const parsed = parseFloat(dimBRaw);
+          if (!(parsed > 0)) {
+            hasError = true;
+            setStockFieldError(
+              dimBInput,
+              "stock-dim-b-error",
+              "Width must be a number greater than 0."
+            );
+          } else {
+            dimB = parsed;
+          }
         }
       }
     } else {
@@ -535,8 +555,7 @@ function setupCadImport() {
         3
       )} ${units}³`;
 
-      // NEW: kick off the CAD preview module using the same File object
-      // (cadPreview.js will handle its own parsing / canvas drawing)
+      // Kick off the CAD preview module using the same File object.
       startCadPreviewFromFile(file);
 
       applyTargetShape(targetShape, prefix);
@@ -567,12 +586,15 @@ function renderSteps() {
     empty.className = "steps-empty";
     listEl.appendChild(empty);
   } else {
-    const ul = document.createElement("ul");
-    ul.className = "steps-ul";
-
     appState.steps.forEach((step, index) => {
-      const li = document.createElement("li");
-      li.className = "steps-item";
+      const row = document.createElement("div");
+      row.className = "steps-list-item";
+
+      const mainDiv = document.createElement("div");
+      mainDiv.className = "steps-list-item-main";
+
+      const metaDiv = document.createElement("div");
+      metaDiv.className = "steps-list-item-meta";
 
       const opLabel = getOperationLabel(step.operationType);
       const metaBits = [];
@@ -589,10 +611,12 @@ function renderSteps() {
         metaBits.push(`${step.volumeDelta.toFixed(3)} ${action}`);
       }
 
-      const beforeAfter = document.createElement("div");
-      beforeAfter.innerHTML = `<strong>${index + 1}. ${opLabel}</strong> — ${
-        step.description
-      }<br/><small>${metaBits.join(" · ")}</small>`;
+      mainDiv.innerHTML = `<strong>Step ${index + 1}: ${opLabel}</strong><br/>${
+        step.description || ""
+      }`;
+
+      const metaText = document.createElement("div");
+      metaText.textContent = metaBits.join(" · ");
 
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
@@ -603,12 +627,13 @@ function renderSteps() {
         renderSteps();
       });
 
-      li.appendChild(beforeAfter);
-      li.appendChild(deleteBtn);
-      ul.appendChild(li);
-    });
+      metaDiv.appendChild(metaText);
+      metaDiv.appendChild(deleteBtn);
 
-    listEl.appendChild(ul);
+      row.appendChild(mainDiv);
+      row.appendChild(metaDiv);
+      listEl.appendChild(row);
+    });
   }
 
   // Volume budget summary
@@ -666,27 +691,26 @@ function renderSteps() {
 function setupStepsUI() {
   console.log("[Steps] Setting up steps UI…");
 
-  const opSelect = document.getElementById("steps-op");
+  // IDs aligned with index.html for the core controls
+  const opSelect = document.getElementById("step-operation");
+  const descInput = document.getElementById("step-description");
+  const volumeDeltaInput = document.getElementById("step-delta-volume");
+  const unitsSelect = document.getElementById("step-units");
+  const addBtn = document.getElementById("step-add-btn");
+  const errorEl = document.getElementById("steps-error");
+
+  // Optional extra fields for future expansion
   const lengthInput = document.getElementById("steps-param-length");
   const locationInput = document.getElementById("steps-param-location");
-  const descInput = document.getElementById("steps-description");
-  const volumeDeltaInput = document.getElementById("steps-volume-delta");
-  const volumeDeltaLabel = document.getElementById(
-    "steps-volume-delta-label"
-  );
-  const addBtn = document.getElementById("steps-add-btn");
+  const volumeDeltaLabel = document.getElementById("steps-volume-delta-label");
   const clearBtn = document.getElementById("steps-clear-btn");
-  const errorEl = document.getElementById("steps-error");
 
   if (
     !opSelect ||
-    !lengthInput ||
-    !locationInput ||
     !descInput ||
     !volumeDeltaInput ||
-    !volumeDeltaLabel ||
+    !unitsSelect ||
     !addBtn ||
-    !clearBtn ||
     !errorEl
   ) {
     console.error("[Steps] One or more steps UI elements are missing.");
@@ -707,6 +731,8 @@ function setupStepsUI() {
     const op = opSelect.value;
     const massType = getOperationMassChangeType(op);
 
+    if (!volumeDeltaLabel) return; // optional label element
+
     if (massType === "removed") {
       volumeDeltaLabel.textContent = "Volume removed (units³)";
     } else if (massType === "added") {
@@ -724,10 +750,9 @@ function setupStepsUI() {
     errorEl.textContent = "";
 
     const operationType = opSelect.value;
-    const lengthText = (lengthInput.value || "").trim();
-    const locationText = (locationInput.value || "").trim();
     const userDesc = (descInput.value || "").trim();
     const volumeDeltaRaw = volumeDeltaInput.value;
+    const stepUnits = unitsSelect.value || "in";
     const volumeDelta = volumeDeltaRaw ? parseFloat(volumeDeltaRaw) : 0;
 
     if (!operationType) {
@@ -741,10 +766,16 @@ function setupStepsUI() {
       return;
     }
 
-    // Build params object (simple for now)
+    // Optional extra params
+    const lengthText =
+      lengthInput && lengthInput.value ? lengthInput.value.trim() : "";
+    const locationText =
+      locationInput && locationInput.value ? locationInput.value.trim() : "";
+
     const params = {};
     if (lengthText) params.length = lengthText;
     if (locationText) params.location = locationText;
+    if (stepUnits) params.units = stepUnits;
 
     try {
       const step = new ForgeStep({
@@ -758,8 +789,8 @@ function setupStepsUI() {
       appState.steps.push(step);
 
       // Clear inputs for next step
-      lengthInput.value = "";
-      locationInput.value = "";
+      if (lengthInput) lengthInput.value = "";
+      if (locationInput) locationInput.value = "";
       descInput.value = "";
       volumeDeltaInput.value = "";
 
@@ -771,10 +802,12 @@ function setupStepsUI() {
     }
   });
 
-  clearBtn.addEventListener("click", () => {
-    appState.steps = [];
-    renderSteps();
-  });
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      appState.steps = [];
+      renderSteps();
+    });
+  }
 
   renderSteps();
 }
@@ -844,7 +877,7 @@ function initApp() {
   setupStockForm();
   setupTargetShapeForm();
   setupCadImport();
-  // NEW: initialize the CAD preview canvas (no-op if the canvas isn’t present)
+  // Initialize the CAD preview canvas (no-op if the canvas isn’t present)
   setupCadPreviewCanvas();
   setupStepsUI();
   setupGeometrySimulationUI();
