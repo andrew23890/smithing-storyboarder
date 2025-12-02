@@ -3,7 +3,7 @@
 //
 // These functions handle:
 // - Rendering the list of ForgeStep items
-// - Rendering the volume budget summary using summarizeStepsVolumeEffect
+// - Rendering the volume budget summary using appState.volumeSummary
 // - Showing / clearing card-level errors for the steps card
 //
 // NOTE:
@@ -12,13 +12,94 @@
 // - Deletion is exposed via an optional callback so appState.js (or main.js)
 //   can decide how to mutate state.
 //
-// Expected structures:
-// - appState.steps is an array of ForgeStep instances (from stepModel.js)
-// - each step has: id, operationType, description, massChangeType, volumeDelta
+// Expected structures (Phase 5):
+// - appState.steps: array of ForgeStep instances (from stepModel.js)
+//   each step has at least:
+//     id, operationType, label, params, massChangeType,
+//     volumeDelta, suggestedVolumeDelta, summary, forgeNote
+// - appState.volumeSummary: {
+//     startingVolume, targetVolume,
+//     removedVolume, addedVolume,
+//     netVolume, predictedFinalVolume,
+//     volumeWarnings: string[]
+//   }
 
 import { getOperationLabel } from "../operations.js";
-import { summarizeStepsVolumeEffect } from "../stepModel.js";
-import { computeStockVolume } from "../volumeEngine.js";
+
+/* -------------------------------------------------------------------------
+ * Small helpers
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Defensive formatter for volume numbers.
+ */
+function formatVolume(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "0.000";
+  return n.toFixed(3);
+}
+
+/**
+ * Make a plain string safe for textContent.
+ */
+function safeString(value) {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Extract a user description from the step, if present.
+ * We support both step.description and params.description.
+ */
+function extractUserDescription(step) {
+  if (!step) return "";
+  if (typeof step.description === "string" && step.description.trim()) {
+    return step.description.trim();
+  }
+  const params = step.params || {};
+  if (
+    typeof params.description === "string" &&
+    params.description.trim()
+  ) {
+    return params.description.trim();
+  }
+  return "";
+}
+
+/**
+ * Build a list of human-readable parameter lines from the step params.
+ * We hide some internal keys that aren’t user-facing.
+ */
+function buildParamLines(params = {}) {
+  const lines = [];
+  const hiddenKeys = new Set([
+    "description",
+    "massChangeTypeOverride",
+    "volumeDeltaOverride",
+    "volumeDelta",
+    "volumeOverride",
+  ]);
+
+  for (const [key, raw] of Object.entries(params)) {
+    if (hiddenKeys.has(key)) continue;
+    if (raw === null || raw === undefined || raw === "") continue;
+
+    let label = key
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase();
+
+    // Light tidying
+    label = label.replace(/\bdeg\b/, "degrees");
+
+    lines.push(`${label}: ${raw}`);
+  }
+
+  return lines;
+}
+
+/* -------------------------------------------------------------------------
+ * Steps list rendering
+ * ---------------------------------------------------------------------- */
 
 /**
  * Render the list of steps into the given container element.
@@ -27,7 +108,7 @@ import { computeStockVolume } from "../volumeEngine.js";
  * @param {HTMLElement|null} listEl - Container (id="steps-list").
  * @param {object} [options]
  * @param {(step: object, index: number) => void} [options.onDeleteStep]
- *        Optional callback when the user clicks "Remove" on a step.
+ *        Optional callback when a step's "Remove" button is clicked.
  */
 export function renderStepsList(appState, listEl, options = {}) {
   const { onDeleteStep } = options;
@@ -37,7 +118,9 @@ export function renderStepsList(appState, listEl, options = {}) {
     return;
   }
 
-  const steps = (appState && Array.isArray(appState.steps)) ? appState.steps : [];
+  const steps = appState && Array.isArray(appState.steps)
+    ? appState.steps
+    : [];
 
   listEl.innerHTML = "";
 
@@ -54,25 +137,82 @@ export function renderStepsList(appState, listEl, options = {}) {
 
     const row = document.createElement("div");
     row.className = "steps-list-item";
-    if (step.id) {
-      row.dataset.stepId = step.id;
-    }
 
+    // Main column (left)
     const mainDiv = document.createElement("div");
     mainDiv.className = "steps-list-item-main";
 
+    // Header: Step N + label
+    const header = document.createElement("div");
+    const opLabel = getOperationLabel(step.operationType) || step.label || "Forge step";
+    header.innerHTML = `<strong>Step ${index + 1}: ${opLabel}</strong>`;
+    mainDiv.appendChild(header);
+
+    // Auto summary (from ForgeStep.summary, if present)
+    if (step.summary) {
+      const summaryEl = document.createElement("div");
+      summaryEl.className = "steps-list-summary";
+      summaryEl.textContent = step.summary;
+      mainDiv.appendChild(summaryEl);
+    }
+
+    // User description (plain-language notes)
+    const userDesc = extractUserDescription(step);
+    if (userDesc) {
+      const descEl = document.createElement("div");
+      descEl.className = "steps-list-description";
+      descEl.textContent = userDesc;
+      mainDiv.appendChild(descEl);
+    }
+
+    // Parameter details (generic key/value list)
+    const paramLines = buildParamLines(step.params || {});
+    if (paramLines.length) {
+      const paramsBlock = document.createElement("div");
+      paramsBlock.className = "steps-list-params";
+
+      const title = document.createElement("div");
+      title.className = "steps-list-params-title";
+      title.textContent = "Parameters:";
+      paramsBlock.appendChild(title);
+
+      const list = document.createElement("ul");
+      list.className = "steps-list-params-list";
+
+      paramLines.forEach((line) => {
+        const li = document.createElement("li");
+        li.textContent = line;
+        list.appendChild(li);
+      });
+
+      paramsBlock.appendChild(list);
+      mainDiv.appendChild(paramsBlock);
+    }
+
+    // ForgeAI note (what this operation usually does)
+    if (step.forgeNote) {
+      const noteEl = document.createElement("div");
+      noteEl.className = "steps-list-note";
+      noteEl.textContent = `ForgeAI note: ${safeString(step.forgeNote)}`;
+      mainDiv.appendChild(noteEl);
+    }
+
+    // Meta column (right)
     const metaDiv = document.createElement("div");
     metaDiv.className = "steps-list-item-meta";
 
-    const opLabel = getOperationLabel(step.operationType);
     const metaBits = [];
 
-    // Mass/volume change summary line
+    // Mass behavior line
     if (step.massChangeType) {
       metaBits.push(`Mass: ${step.massChangeType}`);
     }
 
-    if (Number.isFinite(step.volumeDelta) && step.volumeDelta > 0) {
+    // Volume information
+    const vol = Number(step.volumeDelta);
+    const suggested = Number(step.suggestedVolumeDelta);
+
+    if (Number.isFinite(vol) && vol > 0) {
       const action =
         step.massChangeType === "removed"
           ? "volume removed"
@@ -80,20 +220,25 @@ export function renderStepsList(appState, listEl, options = {}) {
           ? "volume added"
           : "volume Δ";
 
-      metaBits.push(`${step.volumeDelta.toFixed(3)} ${action}`);
+      metaBits.push(`${formatVolume(vol)} ${action}`);
     } else if (step.massChangeType === "conserved") {
       metaBits.push("ΔV ≈ 0 (conserved)");
     }
 
-    // Main description block
-    const safeDescription = step.description || "";
-    mainDiv.innerHTML = `<strong>Step ${index + 1}: ${opLabel}</strong><br/>${safeDescription}`;
+    // Heuristic hint if we have a suggested volume that differs
+    if (
+      Number.isFinite(suggested) &&
+      suggested > 0 &&
+      (!Number.isFinite(vol) || Math.abs(suggested - vol) > 1e-6)
+    ) {
+      metaBits.push(`heuristic: ~${formatVolume(suggested)}`);
+    }
 
-    // Meta text (on the right side)
-    const metaText = document.createElement("div");
-    metaText.textContent = metaBits.join(" · ");
-
-    metaDiv.appendChild(metaText);
+    if (metaBits.length) {
+      const metaText = document.createElement("div");
+      metaText.textContent = metaBits.join(" · ");
+      metaDiv.appendChild(metaText);
+    }
 
     // Optional delete button (hooked up only if onDeleteStep is provided)
     if (typeof onDeleteStep === "function") {
@@ -109,15 +254,23 @@ export function renderStepsList(appState, listEl, options = {}) {
 
     row.appendChild(mainDiv);
     row.appendChild(metaDiv);
+
+    if (step.id) {
+      row.dataset.stepId = step.id;
+    }
+
     listEl.appendChild(row);
   });
 }
 
+/* -------------------------------------------------------------------------
+ * Volume summary rendering (Phase 5)
+ * ---------------------------------------------------------------------- */
+
 /**
- * Render the volume budget summary using the current steps and (optionally)
- * startingStock + targetShape for extra context.
+ * Render the volume budget summary using the current appState.volumeSummary.
  *
- * @param {object} appState - Global state with steps, startingStock, targetShape.
+ * @param {object} appState - Global state with volumeSummary.
  * @param {HTMLElement|null} summaryEl - Element (id="steps-volume-summary").
  */
 export function renderStepsVolumeSummary(appState, summaryEl) {
@@ -126,64 +279,81 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     return;
   }
 
-  const steps = (appState && Array.isArray(appState.steps)) ? appState.steps : [];
-  const { removed, added } = summarizeStepsVolumeEffect(steps);
+  const vs = appState && appState.volumeSummary;
+  summaryEl.classList.add("steps-volume-summary");
 
-  let summaryText = `Total volume removed by steps: ${removed.toFixed(
-    3
-  )}  ·  Total volume added: ${added.toFixed(3)}`;
-
-  const startingStock = appState && appState.startingStock;
-  const targetShape = appState && appState.targetShape;
-
-  if (startingStock) {
-    const stockVolume = computeStockVolume(startingStock);
-    const units = startingStock.units || "units";
-
-    if (Number.isFinite(stockVolume)) {
-      const finalBudget = stockVolume - removed + added;
-
-      summaryText += `\nStarting stock volume: ${stockVolume.toFixed(
-        3
-      )} ${units}³`;
-      summaryText += `\nTheoretical volume budget after steps: ${finalBudget.toFixed(
-        3
-      )} ${units}³`;
-
-      if (targetShape && targetShape.units === units) {
-        const targetVol = Number(targetShape.volume);
-        if (Number.isFinite(targetVol)) {
-          if (targetVol > stockVolume) {
-            summaryText +=
-              `\n⚠️ Target volume (${targetVol.toFixed(
-                3
-              )}) is greater than starting volume. This is physically impossible unless material is added.`;
-          } else if (targetVol > finalBudget) {
-            summaryText +=
-              `\n⚠️ Target volume (${targetVol.toFixed(
-                3
-              )}) is greater than remaining budget (${finalBudget.toFixed(
-                3
-              )}). Steps currently remove too much net volume.`;
-          } else {
-            summaryText +=
-              `\n✅ Target volume (${targetVol.toFixed(
-                3
-              )}) is ≤ starting volume and within the current volume budget.`;
-          }
-        }
-      }
-    }
-  } else {
-    summaryText +=
-      "\nDefine starting stock to see how this compares to your initial volume.";
+  if (!vs) {
+    summaryEl.textContent =
+      "Volume budget will appear here after you set starting stock and add steps.";
+    return;
   }
 
-  summaryEl.textContent = summaryText;
+  const {
+    startingVolume,
+    targetVolume,
+    removedVolume,
+    addedVolume,
+    predictedFinalVolume,
+    volumeWarnings,
+  } = vs;
+
+  const lines = [];
+
+  // Basic removed/added totals
+  lines.push(
+    `Total volume removed by steps: ${formatVolume(
+      removedVolume
+    )}  ·  Total volume added: ${formatVolume(addedVolume)}`
+  );
+
+  // Starting stock
+  if (Number.isFinite(startingVolume)) {
+    lines.push(
+      `Starting stock volume: ${formatVolume(startingVolume)} (units³)`
+    );
+  } else {
+    lines.push(
+      "Starting stock volume: (unknown — define starting stock to see this)."
+    );
+  }
+
+  // Predicted final volume
+  if (Number.isFinite(predictedFinalVolume)) {
+    lines.push(
+      `Predicted final stock volume (start − removed + added): ${formatVolume(
+        predictedFinalVolume
+      )} (units³)`
+    );
+  }
+
+  // Target shape volume (if any)
+  if (Number.isFinite(targetVolume)) {
+    lines.push(`Target shape volume: ${formatVolume(targetVolume)} (units³)`);
+  }
+
+  // Warnings (from appState.volumeSummary)
+  if (Array.isArray(volumeWarnings) && volumeWarnings.length) {
+    lines.push("");
+    lines.push("Warnings:");
+    volumeWarnings.forEach((w) => {
+      lines.push(`⚠️ ${w}`);
+    });
+  } else if (Number.isFinite(startingVolume) && Number.isFinite(predictedFinalVolume)) {
+    lines.push("");
+    lines.push(
+      "✅ Volume budget looks physically plausible based on current heuristic estimates."
+    );
+  }
+
+  summaryEl.textContent = lines.join("\n");
 }
 
+/* -------------------------------------------------------------------------
+ * Public panel renderer + error helpers
+ * ---------------------------------------------------------------------- */
+
 /**
- * Convenience helper: render both steps list and volume summary in one call.
+ * Render both the step list and the volume summary.
  *
  * @param {object} appState
  * @param {HTMLElement|null} listEl

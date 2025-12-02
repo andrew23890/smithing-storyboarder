@@ -64,31 +64,54 @@ function setupHelloButton() {
   button.addEventListener("click", () => {
     const message = forgeGreeting();
     output.textContent = message;
-    console.log("[ForgeAI Hello]", message);
   });
 }
 
-/* ----------------- SHARED UI REFRESH HELPERS ----------------- */
+/* ----------------- STOCK UI REFRESH ----------------- */
 
 function refreshStockUI() {
   const summaryEl = document.getElementById("stock-summary");
-  if (!summaryEl) return;
+  if (!summaryEl) {
+    console.error("[Stock] Missing stock-summary element in DOM.");
+    return;
+  }
   renderStockSummary(appState, summaryEl);
+
+  // Target comparison also depends on starting stock volume
+  const targetSummaryEl = document.getElementById("target-summary");
+  const targetCompareEl = document.getElementById("target-compare");
+  if (targetSummaryEl && targetCompareEl) {
+    renderTargetSummary(appState, targetSummaryEl);
+    renderTargetComparison(appState, targetCompareEl);
+  }
 }
+
+/* ----------------- TARGET UI REFRESH ----------------- */
 
 function refreshTargetUI() {
   const summaryEl = document.getElementById("target-summary");
   const compareEl = document.getElementById("target-compare");
-  if (!summaryEl || !compareEl) return;
+
+  if (!summaryEl || !compareEl) {
+    console.error(
+      "[Target] Missing target-summary or target-compare elements in DOM."
+    );
+    return;
+  }
+
   renderTargetSummary(appState, summaryEl);
   renderTargetComparison(appState, compareEl);
 }
+
+/* ----------------- STEPS UI REFRESH ----------------- */
 
 function refreshStepsUI() {
   const listEl = document.getElementById("steps-list");
   const summaryEl = document.getElementById("steps-volume-summary");
   if (!listEl || !summaryEl) {
-    console.error("[Steps] Missing steps-list or steps-volume-summary element.");
+    console.error(
+      "[Steps] Missing steps-list or steps-volume-summary element."
+    );
     return;
   }
 
@@ -111,14 +134,14 @@ function setupStockForm() {
   const shapeSelect = document.getElementById("stock-shape");
   const dimAInput = document.getElementById("dim-a");
   const dimBInput = document.getElementById("dim-b");
-  const dimALabel = document.querySelector('label[for="dim-a"]');
-  const dimBLabel = document.querySelector('label[for="dim-b"]');
   const dimBField = document.getElementById("dim-b-wrapper");
   const lengthInput = document.getElementById("length");
   const unitsSelect = document.getElementById("stock-units");
-  const calcButton = document.getElementById("stock-set-btn");
+  const setButton = document.getElementById("stock-set-btn");
   const errorEl = document.getElementById("stock-error");
-  const summaryEl = document.getElementById("stock-summary");
+
+  const dimALabel = document.querySelector('label[for="dim-a"]');
+  const dimBLabel = document.querySelector('label[for="dim-b"]');
 
   if (
     !materialSelect ||
@@ -126,51 +149,44 @@ function setupStockForm() {
     !dimAInput ||
     !lengthInput ||
     !unitsSelect ||
-    !calcButton ||
-    !errorEl ||
-    !summaryEl
+    !setButton
   ) {
     console.error(
-      "[StockForm] One or more stock-form elements are missing from the DOM."
+      "[StockForm] Missing one or more stock form elements in DOM."
     );
     return;
   }
 
   function updateDimensionLabels() {
     const shape = shapeSelect.value;
-    console.log("[StockForm] Shape changed to:", shape);
-
-    if (!dimALabel || !dimBLabel) {
-      // Labels are optional; if missing, we just bail.
-      return;
-    }
+    if (!dimALabel || !dimBLabel) return;
 
     switch (shape) {
       case "square":
         dimALabel.textContent = "Side (a)";
-        dimBLabel.textContent = "Secondary dimension";
+        dimBLabel.textContent = "Side (b)";
         if (dimBField) {
-          dimBField.style.display = "none";
+          dimBField.style.display = "";
         }
         break;
       case "round":
-        dimALabel.textContent = "Diameter (d)";
-        dimBLabel.textContent = "Secondary dimension";
+        dimALabel.textContent = "Diameter";
+        dimBLabel.textContent = "Unused for round";
         if (dimBField) {
           dimBField.style.display = "none";
         }
         break;
       case "flat":
+      case "rectangle":
         dimALabel.textContent = "Width (a)";
-        dimBLabel.textContent = "Thickness (b)";
+        dimBLabel.textContent = "Height / thickness (b)";
         if (dimBField) {
           dimBField.style.display = "";
         }
         break;
-      case "rectangle":
       default:
-        dimALabel.textContent = "Width (a)";
-        dimBLabel.textContent = "Height / thickness (b)";
+        dimALabel.textContent = "Primary dimension";
+        dimBLabel.textContent = "Secondary dimension";
         if (dimBField) {
           dimBField.style.display = "";
         }
@@ -181,145 +197,67 @@ function setupStockForm() {
   shapeSelect.addEventListener("change", updateDimensionLabels);
   updateDimensionLabels(); // Initialize on load
 
-  calcButton.addEventListener("click", () => {
-    console.log("[StockForm] Set Starting Stock clicked");
-
-    // Clear previous messages
+  setButton.addEventListener("click", () => {
+    console.log("[StockForm] Set starting stock clicked.");
+    clearStockError(errorEl);
+    clearStockMessages();
     clearStockFieldErrors();
-    clearStockMessages(summaryEl, errorEl);
+
+    const material = materialSelect.value || "mild_steel";
+    const shape = shapeSelect.value || "square";
+
+    const dimA = Number(dimAInput.value);
+    const dimB = dimBInput ? Number(dimBInput.value) : NaN;
+    const length = Number(lengthInput.value);
+    const units = unitsSelect.value || "in";
 
     let hasError = false;
 
-    // Material (required)
-    const materialRaw = materialSelect.value;
-    let material = materialRaw;
-    if (!materialRaw) {
-      hasError = true;
+    if (!shape) {
       setStockFieldError(
-        materialSelect,
-        "stock-material-error",
-        "Please choose a material."
-      );
-    }
-
-    // Shape (required)
-    const shapeRaw = shapeSelect.value;
-    const shape = shapeRaw;
-    if (!shapeRaw) {
-      hasError = true;
-      setStockFieldError(
-        shapeSelect,
         "stock-shape-error",
-        "Please choose a cross-section shape."
+        "Please choose a basic stock shape."
       );
+      hasError = true;
     }
 
-    // Primary dimension (required, > 0)
-    const dimARaw = dimAInput.value.trim();
-    let dimA = null;
-    if (!dimARaw) {
-      hasError = true;
+    if (!(dimA > 0)) {
       setStockFieldError(
-        dimAInput,
         "stock-dim-a-error",
-        "Please enter a primary dimension."
+        "Primary dimension must be a positive number."
       );
-    } else {
-      const parsed = parseFloat(dimARaw);
-      if (!(parsed > 0)) {
-        hasError = true;
-        setStockFieldError(
-          dimAInput,
-          "stock-dim-a-error",
-          "Primary dimension must be a number greater than 0."
-        );
-      } else {
-        dimA = parsed;
-      }
-    }
-
-    // Secondary dimension (only for flat/rectangle, > 0)
-    const needsDimB = shape === "flat" || shape === "rectangle";
-    let dimB = null;
-    if (needsDimB) {
-      if (!dimBInput) {
-        hasError = true;
-        console.error(
-          "[StockForm] Secondary dimension required but dim-b input missing in DOM."
-        );
-      } else {
-        const dimBRaw = dimBInput.value.trim();
-        if (!dimBRaw) {
-          hasError = true;
-          setStockFieldError(
-            dimBInput,
-            "stock-dim-b-error",
-            "Please enter a width for flat/rectangular stock."
-          );
-        } else {
-          const parsed = parseFloat(dimBRaw);
-          if (!(parsed > 0)) {
-            hasError = true;
-            setStockFieldError(
-              dimBInput,
-              "stock-dim-b-error",
-              "Width must be a number greater than 0."
-            );
-          } else {
-            dimB = parsed;
-          }
-        }
-      }
-    }
-
-    // Length (required, > 0)
-    const lengthRaw = lengthInput.value.trim();
-    let length = null;
-    if (!lengthRaw) {
       hasError = true;
+    }
+
+    if (shape !== "round" && !(dimB > 0)) {
       setStockFieldError(
-        lengthInput,
+        "stock-dim-b-error",
+        "Secondary dimension must be a positive number."
+      );
+      hasError = true;
+    }
+
+    if (!(length > 0)) {
+      setStockFieldError(
         "stock-length-error",
-        "Please enter a length."
+        "Length must be a positive number."
       );
-    } else {
-      const parsed = parseFloat(lengthRaw);
-      if (!(parsed > 0)) {
-        hasError = true;
-        setStockFieldError(
-          lengthInput,
-          "stock-length-error",
-          "Length must be a number greater than 0."
-        );
-      } else {
-        length = parsed;
-      }
+      hasError = true;
     }
 
-    // Units (required, basic consistency check)
-    const unitsRaw = unitsSelect.value;
-    let units = unitsRaw;
-    if (!unitsRaw) {
-      hasError = true;
+    if (!units) {
       setStockFieldError(
-        unitsSelect,
         "stock-units-error",
-        "Please choose units."
+        "Please choose units for this stock."
       );
-    } else {
-      const allowedUnits = ["in", "mm", "cm"];
-      if (!allowedUnits.includes(unitsRaw)) {
-        hasError = true;
-        setStockFieldError(
-          unitsSelect,
-          "stock-units-error",
-          "Units must be inches, millimeters, or centimeters."
-        );
-      }
+      hasError = true;
     }
 
     if (hasError) {
-      showStockError("Please fix the highlighted errors.", errorEl);
+      showStockError(
+        "Please correct the highlighted fields before setting starting stock.",
+        errorEl
+      );
       return;
     }
 
@@ -328,45 +266,38 @@ function setupStockForm() {
         material,
         shape,
         dimA,
-        dimB,
+        dimB: shape === "round" ? null : dimB,
         length,
         units,
       });
 
-      const volume = computeStockVolume(stock);
-      console.log("[StockForm] Computed volume via volumeEngine:", volume);
-
-      if (!Number.isFinite(volume)) {
-        const msg =
-          "Could not compute volume with the given dimensions. Please check your inputs.";
-        console.error("[StockForm]", msg);
-        showStockError(msg, errorEl);
-        return;
-      }
-
-      // Update global app state
       setStartingStock(stock);
-
-      // Re-render related UI
       refreshStockUI();
-      refreshTargetUI();
-      refreshStepsUI();
+      clearStockError(errorEl);
 
-      console.log("[StockForm] Starting stock set:", { stock, volume });
+      console.log("[StockForm] Starting stock set:", {
+        material,
+        shape,
+        dimA,
+        dimB,
+        length,
+        units,
+        volume: computeStockVolume(stock),
+      });
     } catch (err) {
-      console.error("[StockForm] Unexpected error:", err);
+      console.error("[StockForm] Error while setting starting stock:", err);
       showStockError(
-        "An unexpected error occurred while setting the starting stock.",
+        "There was a problem creating the starting stock. Please check your inputs.",
         errorEl
       );
     }
   });
 }
 
-/* ----------------- TARGET SHAPE (MANUAL) ----------------- */
+/* ----------------- TARGET SHAPE FORM ----------------- */
 
 function setupTargetShapeForm() {
-  console.log("[TargetShape] Setting up manual target shape form…");
+  console.log("[Target] Setting up target shape form…");
 
   const labelInput = document.getElementById("target-label");
   const volumeInput = document.getElementById("target-volume");
@@ -374,149 +305,116 @@ function setupTargetShapeForm() {
   const notesInput = document.getElementById("target-notes");
   const setButton = document.getElementById("target-set-btn");
   const errorEl = document.getElementById("target-error");
-  const summaryEl = document.getElementById("target-summary");
   const compareEl = document.getElementById("target-compare");
+  const summaryEl = document.getElementById("target-summary");
 
-  if (
-    !labelInput ||
-    !volumeInput ||
-    !unitsSelect ||
-    !notesInput ||
-    !setButton ||
-    !errorEl ||
-    !summaryEl ||
-    !compareEl
-  ) {
+  if (!labelInput || !volumeInput || !unitsSelect || !setButton) {
     console.error(
-      "[TargetShape] One or more manual target-shape elements are missing from the DOM."
+      "[Target] Missing one or more target shape form elements in DOM."
     );
     return;
   }
 
+  function clearTargetFormErrors() {
+    if (errorEl) errorEl.textContent = "";
+  }
+
   setButton.addEventListener("click", () => {
+    console.log("[Target] Set target shape clicked.");
     clearTargetError(errorEl);
+    clearTargetFormErrors();
 
-    const labelRaw = (labelInput.value || "").trim();
+    const label = labelInput.value.trim();
     const volumeRaw = volumeInput.value;
-    const units = unitsSelect.value;
-    const notes = (notesInput.value || "").trim();
+    const units = unitsSelect.value || "in";
+    const notes = notesInput ? notesInput.value.trim() : "";
 
-    if (!labelRaw) {
-      showTargetError("Please enter a name/label for the target.", errorEl);
+    if (!label) {
+      showTargetError("Please give your target shape a short label.", errorEl);
       return;
     }
 
-    const volume = parseFloat(volumeRaw);
+    const volume = Number(volumeRaw);
     if (!(volume > 0)) {
       showTargetError(
-        "Please enter a target volume greater than 0.",
+        "Target volume must be a positive number.",
         errorEl
       );
       return;
     }
 
-    if (!units) {
-      showTargetError("Please choose units for the target volume.", errorEl);
-      return;
-    }
-
     try {
       const target = new TargetShape({
-        sourceType: "manual",
-        label: labelRaw,
+        label,
         volume,
         units,
         notes,
-        metadata: {
-          source: "manual",
-        },
+        sourceType: "manual",
       });
 
       setTargetShape(target);
-
-      // Re-render target + comparison + steps budget
       renderTargetSummary(appState, summaryEl);
       renderTargetComparison(appState, compareEl);
-      refreshStepsUI();
+      clearTargetError(errorEl);
+
+      console.log("[Target] Target shape set:", { target });
     } catch (err) {
-      console.error("[TargetShape] Unexpected error:", err);
+      console.error("[Target] Error while setting target shape:", err);
       showTargetError(
-        "An unexpected error occurred while setting the target shape.",
+        "There was a problem creating the target shape. Please check your inputs.",
         errorEl
       );
     }
   });
 }
 
-/* ----------------- TARGET SHAPE (CAD / STL IMPORT) ----------------- */
+/* ----------------- CAD IMPORT + TARGET SHAPE ----------------- */
 
 function setupCadImport() {
-  console.log("[CAD] Setting up CAD/STL import…");
+  console.log("[CAD] Setting up CAD import…");
 
   const fileInput = document.getElementById("cad-file");
   const unitsSelect = document.getElementById("cad-units");
-  const labelInput = document.getElementById("cad-label");
-  const loadBtn = document.getElementById("cad-load-btn");
-  const cadErrorEl = document.getElementById("cad-error");
+  const loadButton = document.getElementById("cad-load-btn");
+  const errorEl = document.getElementById("cad-error");
+  const labelEl = document.getElementById("cad-label");
   const targetSummaryEl = document.getElementById("target-summary");
   const targetCompareEl = document.getElementById("target-compare");
 
-  if (
-    !fileInput ||
-    !unitsSelect ||
-    !labelInput ||
-    !loadBtn ||
-    !cadErrorEl ||
-    !targetSummaryEl ||
-    !targetCompareEl
-  ) {
-    console.error("[CAD] One or more CAD import elements are missing.");
+  if (!fileInput || !unitsSelect || !loadButton) {
+    console.error("[CAD] Missing one or more CAD import elements in DOM.");
     return;
   }
 
-  loadBtn.addEventListener("click", async () => {
-    cadErrorEl.textContent = "";
+  loadButton.addEventListener("click", async () => {
+    clearTargetError(errorEl);
+    if (errorEl) errorEl.textContent = "";
 
     const file = fileInput.files && fileInput.files[0];
     if (!file) {
-      cadErrorEl.textContent = "Please choose an STL file to import.";
+      if (errorEl) errorEl.textContent = "Please choose an STL file first.";
       return;
     }
 
-    const units = unitsSelect.value;
-    if (!units) {
-      cadErrorEl.textContent = "Please choose the units for the STL file.";
-      return;
-    }
-
-    const labelOverride = (labelInput.value || "").trim();
-    const label = labelOverride || file.name || "Imported STL target";
+    const units = unitsSelect.value || "mm";
 
     try {
-      const { volume, triangleCount } = await parseSTLFile(file);
-
-      if (!Number.isFinite(volume) || volume <= 0) {
-        cadErrorEl.textContent =
-          "Could not compute a valid volume from this STL file.";
-        return;
-      }
+      const { volume, label } = await parseSTLFile(file, { units });
 
       const target = new TargetShape({
-        sourceType: "cad",
-        label,
+        label: label || file.name,
         volume,
         units,
-        notes: "",
-        metadata: {
-          source: "cad",
-          filename: file.name,
-          triangleCount,
-        },
+        notes: "Imported from STL.",
+        sourceType: "stl",
       });
 
       setTargetShape(target);
 
-      // Re-render target + comparison + steps budget
+      if (labelEl) {
+        labelEl.textContent = `Loaded: ${file.name}`;
+      }
+
       renderTargetSummary(appState, targetSummaryEl);
       renderTargetComparison(appState, targetCompareEl);
       refreshStepsUI();
@@ -531,13 +429,15 @@ function setupCadImport() {
       console.log("[CAD] CAD target shape set from STL:", { target });
     } catch (err) {
       console.error("[CAD] Error parsing STL file:", err);
-      cadErrorEl.textContent =
-        "There was a problem reading the STL file. Please confirm it’s a valid STL.";
+      if (errorEl) {
+        errorEl.textContent =
+          "There was a problem reading the STL file. Please confirm it’s a valid STL.";
+      }
     }
   });
 }
 
-/* ----------------- FORGING STEPS UI ----------------- */
+/* ----------------- STEPS FORM + VOLUME BUDGET (PHASE 5) ----------------- */
 
 function setupStepsUI() {
   console.log("[Steps] Setting up steps UI…");
@@ -550,39 +450,343 @@ function setupStepsUI() {
   const addBtn = document.getElementById("step-add-btn");
   const errorEl = document.getElementById("steps-error");
 
-  // Optional extra fields for future expansion
+  // Optional extra fields for Phase 5 structured params
   const lengthInput = document.getElementById("steps-param-length");
   const locationInput = document.getElementById("steps-param-location");
   const volumeDeltaLabel = document.getElementById("steps-volume-delta-label");
   const clearBtn = document.getElementById("steps-clear-btn");
+
+  const lengthLabelEl = document.querySelector('label[for="steps-param-length"]');
+  const locationLabelEl = document.querySelector(
+    'label[for="steps-param-location"]'
+  );
 
   if (
     !opSelect ||
     !descInput ||
     !volumeDeltaInput ||
     !unitsSelect ||
-    !addBtn ||
-    !errorEl
+    !addBtn
   ) {
-    console.error("[Steps] One or more steps UI elements are missing.");
+    console.error("[Steps] Required step form elements are missing in the DOM.");
     return;
   }
 
-  // Populate operation dropdown
-  opSelect.innerHTML = "";
-  const opValues = Object.values(FORGE_OPERATION_TYPES);
-  opValues.forEach((op) => {
-    const option = document.createElement("option");
-    option.value = op;
-    option.textContent = getOperationLabel(op);
-    opSelect.appendChild(option);
-  });
+  // ------------------ Param config per operation (Phase 5.1) ------------------ //
+
+  const OP_PARAM_CONFIG = {
+    [FORGE_OPERATION_TYPES.DRAW_OUT]: {
+      length: {
+        label: "Length region affected",
+        placeholder: 'e.g. last 4" of bar',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Section / notes (optional)",
+        placeholder: "e.g. near tip",
+        key: "notes",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.TAPER]: {
+      length: {
+        label: "Taper length",
+        placeholder: 'e.g. 3" from tip',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Taper direction",
+        placeholder: "e.g. toward tip, both ends",
+        key: "direction",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.UPSET]: {
+      length: {
+        label: "Region length",
+        placeholder: 'e.g. 1" at bar end',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Upset location / notes",
+        placeholder: "e.g. bar end, under hammer",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.BEND]: {
+      length: {
+        label: "Bend location",
+        placeholder: 'e.g. 3" from one end',
+        key: "location",
+        numeric: false,
+      },
+      location: {
+        label: "Target angle (degrees)",
+        placeholder: "e.g. 90",
+        key: "angleDeg",
+        numeric: true,
+      },
+    },
+    [FORGE_OPERATION_TYPES.SCROLL]: {
+      length: {
+        label: "Scroll diameter",
+        placeholder: "e.g. 1.5",
+        key: "scrollDiameter",
+        numeric: true,
+      },
+      location: {
+        label: "Scroll location / notes",
+        placeholder: "e.g. bar end, decorative tip",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.TWIST]: {
+      length: {
+        label: "Twisted length",
+        placeholder: 'e.g. middle 4"',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Twist amount (degrees)",
+        placeholder: "e.g. 360",
+        key: "twistDegrees",
+        numeric: true,
+      },
+    },
+    [FORGE_OPERATION_TYPES.FULLER]: {
+      length: {
+        label: "Fullered region length",
+        placeholder: 'e.g. 1" groove',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Fuller location / notes",
+        placeholder: "e.g. shoulder, near eye",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.SECTION_CHANGE]: {
+      length: {
+        label: "Region length",
+        placeholder: 'e.g. 4"',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Section change description",
+        placeholder: "e.g. square → octagon → round",
+        key: "sectionChangeDescription",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.FLATTEN]: {
+      length: {
+        label: "Length flattened",
+        placeholder: 'e.g. 3"',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Face",
+        placeholder: "e.g. broad face, edge",
+        key: "face",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.STRAIGHTEN]: {
+      length: {
+        label: "Length straightened",
+        placeholder: 'e.g. full bar, last 6"',
+        key: "lengthRegion",
+        numeric: false,
+      },
+      location: {
+        label: "Notes",
+        placeholder: "e.g. remove S-bend, minor tweak",
+        key: "notes",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.SETDOWN]: {
+      length: {
+        label: "Step length",
+        placeholder: "e.g. 0.5",
+        key: "stepLength",
+        numeric: true,
+      },
+      location: {
+        label: "Step location",
+        placeholder: 'e.g. 2" from shoulder',
+        key: "location",
+        numeric: false,
+      },
+    },
+
+    // Volume-removing
+    [FORGE_OPERATION_TYPES.CUT]: {
+      length: {
+        label: "Length cut off",
+        placeholder: "e.g. 2.5",
+        key: "removedLength",
+        numeric: true,
+      },
+      location: {
+        label: "Location on bar",
+        placeholder: "e.g. at tip, mid-section",
+        key: "cutLocation",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.TRIM]: {
+      length: {
+        label: "Length trimmed",
+        placeholder: "e.g. 0.25",
+        key: "removedLength",
+        numeric: true,
+      },
+      location: {
+        label: "Trim location / notes",
+        placeholder: "e.g. fins at edge",
+        key: "trimLocation",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.SLIT]: {
+      length: {
+        label: "Slit length",
+        placeholder: "e.g. 1.25",
+        key: "slitLength",
+        numeric: true,
+      },
+      location: {
+        label: "Slit location",
+        placeholder: "e.g. center, near eye",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.SPLIT]: {
+      length: {
+        label: "Split length",
+        placeholder: "e.g. 1.25",
+        key: "splitLength",
+        numeric: true,
+      },
+      location: {
+        label: "Split location",
+        placeholder: "e.g. fork section",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.PUNCH]: {
+      length: {
+        label: "Hole diameter",
+        placeholder: "e.g. 0.375",
+        key: "holeDiameter",
+        numeric: true,
+      },
+      location: {
+        label: "Punch location",
+        placeholder: 'e.g. 2" from end',
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.DRIFT]: {
+      length: {
+        label: "Final hole diameter",
+        placeholder: "e.g. 0.5",
+        key: "finalHoleDiameter",
+        numeric: true,
+      },
+      location: {
+        label: "Drift location / notes",
+        placeholder: "e.g. same hole as punched",
+        key: "location",
+        numeric: false,
+      },
+    },
+
+    // Volume-adding
+    [FORGE_OPERATION_TYPES.WELD]: {
+      length: {
+        label: "Added length",
+        placeholder: 'e.g. 3" scarf piece',
+        key: "addedLength",
+        numeric: true,
+      },
+      location: {
+        label: "Weld location / notes",
+        placeholder: "e.g. mid-bar, at joint",
+        key: "location",
+        numeric: false,
+      },
+    },
+    [FORGE_OPERATION_TYPES.COLLAR]: {
+      length: {
+        label: "Collar length",
+        placeholder: "e.g. 1.0",
+        key: "collarLength",
+        numeric: true,
+      },
+      location: {
+        label: "Collar width / thickness",
+        placeholder: "e.g. 0.5 × 0.25",
+        key: "collarSizeText",
+        numeric: false,
+      },
+    },
+  };
+
+  function applyParamConfigForOperation(op) {
+    if (!lengthInput || !locationInput) return;
+
+    const cfg = OP_PARAM_CONFIG[op] || null;
+
+    // Default labels if we don't have a special config
+    const defaultLengthLabel = "Length affected (optional)";
+    const defaultLocationLabel = "Location on bar (optional)";
+
+    if (!cfg) {
+      if (lengthLabelEl) lengthLabelEl.textContent = defaultLengthLabel;
+      if (locationLabelEl) locationLabelEl.textContent = defaultLocationLabel;
+      lengthInput.placeholder = 'e.g. 4" tip, 2" near eye';
+      locationInput.placeholder = 'e.g. 3" from end, center section';
+      lengthInput.dataset.paramKey = "length";
+      lengthInput.dataset.numeric = "false";
+      locationInput.dataset.paramKey = "location";
+      locationInput.dataset.numeric = "false";
+      return;
+    }
+
+    // Length field
+    if (lengthLabelEl) lengthLabelEl.textContent = cfg.length.label;
+    lengthInput.placeholder = cfg.length.placeholder || "";
+    lengthInput.dataset.paramKey = cfg.length.key;
+    lengthInput.dataset.numeric = cfg.length.numeric ? "true" : "false";
+
+    // Location field
+    if (locationLabelEl) locationLabelEl.textContent = cfg.location.label;
+    locationInput.placeholder = cfg.location.placeholder || "";
+    locationInput.dataset.paramKey = cfg.location.key;
+    locationInput.dataset.numeric = cfg.location.numeric ? "true" : "false";
+  }
+
+  // ------------------ Volume label logic (existing behavior) ------------------ //
 
   function updateVolumeDeltaLabel() {
+    if (!volumeDeltaLabel) return;
     const op = opSelect.value;
     const massType = getOperationMassChangeType(op);
-
-    if (!volumeDeltaLabel) return; // optional label element
 
     if (massType === "removed") {
       volumeDeltaLabel.textContent = "Volume removed (units³)";
@@ -594,24 +798,85 @@ function setupStepsUI() {
     }
   }
 
-  opSelect.addEventListener("change", updateVolumeDeltaLabel);
-  updateVolumeDeltaLabel();
+  opSelect.addEventListener("change", () => {
+    updateVolumeDeltaLabel();
+    applyParamConfigForOperation(opSelect.value);
+  });
 
-  addBtn.addEventListener("click", () => {
+  // Initialize labels on load
+  updateVolumeDeltaLabel();
+  applyParamConfigForOperation(opSelect.value);
+
+  // ------------------ Helpers for parsing & validation ------------------ //
+
+  function parseNonNegativeFloat(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number.parseFloat(value);
+    if (!Number.isFinite(n) || n < 0) {
+      return NaN;
+    }
+    return n;
+  }
+
+  function buildParamsForCurrentOperation(operationType) {
+    const params = {};
+
+    // Always record units for volume bookkeeping context
+    const units = unitsSelect.value || "in";
+    params.units = units;
+
+    const userDesc = descInput.value.trim();
+    if (userDesc) {
+      params.description = userDesc;
+    }
+
+    if (lengthInput && lengthInput.value.trim()) {
+      const key = lengthInput.dataset.paramKey || "length";
+      const isNumeric = lengthInput.dataset.numeric === "true";
+      const raw = lengthInput.value.trim();
+      if (isNumeric) {
+        const num = parseNonNegativeFloat(raw);
+        if (!Number.isNaN(num) && num !== null) {
+          params[key] = num;
+        }
+      } else {
+        params[key] = raw;
+      }
+    }
+
+    if (locationInput && locationInput.value.trim()) {
+      const key = locationInput.dataset.paramKey || "location";
+      const isNumeric = locationInput.dataset.numeric === "true";
+      const raw = locationInput.value.trim();
+      if (isNumeric) {
+        const num = parseNonNegativeFloat(raw);
+        if (!Number.isNaN(num) && num !== null) {
+          params[key] = num;
+        }
+      } else {
+        params[key] = raw;
+      }
+    }
+
+    return params;
+  }
+
+  // ------------------ Add / Clear buttons ------------------ //
+
+  addBtn.addEventListener("click", (evt) => {
+    evt.preventDefault();
     clearStepsError(errorEl);
 
     const operationType = opSelect.value;
-    const userDesc = (descInput.value || "").trim();
-    const volumeDeltaRaw = volumeDeltaInput.value;
-    const stepUnits = unitsSelect.value || "in";
-    const volumeDelta = volumeDeltaRaw ? parseFloat(volumeDeltaRaw) : 0;
-
     if (!operationType) {
-      showStepsError("Please choose an operation type.", errorEl);
+      showStepsError("Please choose an operation for this step.", errorEl);
       return;
     }
 
-    if (volumeDeltaRaw && !(volumeDelta >= 0)) {
+    // Volume delta override (optional)
+    const volumeDeltaRaw = volumeDeltaInput.value;
+    const volumeDelta = parseNonNegativeFloat(volumeDeltaRaw);
+    if (volumeDeltaRaw && (volumeDelta === null || Number.isNaN(volumeDelta))) {
       showStepsError(
         "Volume change must be a non-negative number if provided.",
         errorEl
@@ -619,46 +884,43 @@ function setupStepsUI() {
       return;
     }
 
-    // Optional extra params
-    const lengthText =
-      lengthInput && lengthInput.value ? lengthInput.value.trim() : "";
-    const locationText =
-      locationInput && locationInput.value ? locationInput.value.trim() : "";
+    const params = buildParamsForCurrentOperation(operationType);
+    if (volumeDelta !== null && !Number.isNaN(volumeDelta)) {
+      // Explicit override beats heuristic suggestion
+      params.volumeDeltaOverride = volumeDelta;
+    }
 
-    const params = {};
-    if (lengthText) params.length = lengthText;
-    if (locationText) params.location = locationText;
-    if (stepUnits) params.units = stepUnits;
+    const startingStateForHeuristic =
+      appState.currentStockState || appState.startingStock || null;
 
     try {
-      const step = new ForgeStep({
+      const step = new ForgeStep(
         operationType,
         params,
-        description: userDesc || undefined,
-        volumeDelta: volumeDelta || 0,
-        notes: "",
-      });
+        startingStateForHeuristic
+      );
 
       addStep(step);
+      refreshStepsUI();
+      clearStepsError(errorEl);
 
-      // Clear inputs for next step
-      if (lengthInput) lengthInput.value = "";
-      if (locationInput) locationInput.value = "";
+      // Reset the most common fields; keep operation type + units
       descInput.value = "";
       volumeDeltaInput.value = "";
-
-      refreshStepsUI();
+      if (lengthInput) lengthInput.value = "";
+      if (locationInput) locationInput.value = "";
     } catch (err) {
       console.error("[Steps] Error creating step:", err);
       showStepsError(
-        "An unexpected error occurred while creating the step.",
+        "There was a problem creating this step. Please check your inputs.",
         errorEl
       );
     }
   });
 
   if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
+    clearBtn.addEventListener("click", (evt) => {
+      evt.preventDefault();
       clearSteps();
       refreshStepsUI();
       clearStepsError(errorEl);
@@ -674,60 +936,69 @@ function setupStepsUI() {
 function setupGeometrySimulationUI() {
   console.log("[Geometry] Setting up geometry simulation UI…");
 
-  const simBtn = document.getElementById("geom-simulate-btn");
-  const errorEl = document.getElementById("geom-error");
+  const button = document.getElementById("geom-simulate-btn");
   const outputEl = document.getElementById("geom-output");
+  const errorEl = document.getElementById("geom-error");
 
-  if (!simBtn || !errorEl || !outputEl) {
-    console.error("[Geometry] Geometry simulation elements missing.");
+  if (!button || !outputEl) {
+    console.error("[Geometry] Missing geom-simulate-btn or geom-output.");
     return;
   }
 
-  simBtn.addEventListener("click", () => {
-    errorEl.textContent = "";
-    outputEl.textContent = "";
-
+  button.addEventListener("click", () => {
     if (!appState.startingStock) {
-      errorEl.textContent =
-        "Please define starting stock before running the geometry simulation.";
+      if (errorEl)
+        errorEl.textContent =
+          "You must set starting stock before running the geometry simulation.";
       return;
     }
 
-    const timeline = recomputeTimeline();
-    if (!timeline) {
-      errorEl.textContent =
-        "Unable to compute the bar state – please check your starting stock.";
-      return;
-    }
+    clearTargetError(errorEl);
 
-    const { baseBar, finalState, snapshots } = timeline;
+    try {
+      // recomputeTimeline() already updates currentStockState + snapshots
+      recomputeTimeline();
 
-    if (!appState.steps || appState.steps.length === 0) {
-      outputEl.textContent =
-        "No steps defined. The bar remains in its starting state:\n\n" +
-        baseBar.describe();
-      return;
-    }
-
-    let text = "";
-    text += "Starting bar state:\n";
-    text += `  ${baseBar.describe()}\n\n`;
-
-    snapshots.forEach((snap, idx) => {
-      const step = snap.step;
-      const opLabel = getOperationLabel(step.operationType);
-      text += `Step ${idx + 1}: ${opLabel}\n`;
-      if (step.description) {
-        text += `  Description: ${step.description}\n`;
+      if (!appState.lastGeometryRun) {
+        outputEl.textContent =
+          "No geometry results available. Please add at least one step.";
+        return;
       }
-      text += `  Engine note: ${snap.engineNote}\n`;
-      text += `  Bar state: ${snap.stateDescription}\n\n`;
-    });
 
-    text += "Final bar state:\n";
-    text += `  ${finalState.describe()}\n`;
+      const { baseBar, snapshots, finalState } = appState.lastGeometryRun;
 
-    outputEl.textContent = text;
+      if (!appState.steps || appState.steps.length === 0) {
+        outputEl.textContent =
+          "No steps defined. The bar remains in its starting state:\n\n" +
+          baseBar.describe();
+        return;
+      }
+
+      let text = "";
+      text += "Starting bar state:\n";
+      text += `  ${baseBar.describe()}\n\n`;
+
+      snapshots.forEach((snap, idx) => {
+        const step = snap.step;
+        const opLabel = getOperationLabel(step.operationType);
+        text += `Step ${idx + 1}: ${opLabel}\n`;
+        if (step.summary) {
+          text += `  ${step.summary}\n`;
+        }
+        text += `  Resulting bar: ${snap.bar.describe()}\n\n`;
+      });
+
+      text += "Final bar state:\n";
+      text += `  ${finalState.describe()}\n`;
+
+      outputEl.textContent = text;
+    } catch (err) {
+      console.error("[Geometry] Error during simulation:", err);
+      if (errorEl) {
+        errorEl.textContent =
+          "There was a problem running the geometry simulation. Check the console for details.";
+      }
+    }
   });
 }
 
