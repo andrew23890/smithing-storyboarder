@@ -5,34 +5,37 @@
 // - startingStock: Stock | null
 // - targetShape: TargetShape | null
 // - steps: ForgeStep[]
-// - currentStockState: BarState | null (result of applying all steps)
+// - currentStockState: Stock | null (resulting stock after last step)
 // - lastGeometryRun: { baseBar, finalState, snapshots } | null
 // - volumeSummary: aggregate volume / mass bookkeeping for Phase 5
 //
-// It also provides small helper functions for updating that state in a
+// It also provides helper functions for updating that state in a
 // predictable way. UI modules and main.js should use these helpers instead
 // of mutating the state directly whenever possible.
 
 import { barStateFromStock, applyStepsToBar } from "./geometryEngine.js";
-import { computeStockVolume } from "./volumeEngine.js";
+import {
+  computeStockVolume,
+  applyOperationToStock,
+} from "./volumeEngine.js";
 import { summarizeStepsVolumeEffect } from "./stepModel.js";
+import { getOperationMassChangeType } from "./operations.js";
 
-/**
- * Canonical app state object.
- *
- * NOTE:
- * - This is a singleton. Import { appState } wherever you need a read-only
- *   view, and use the helper functions below to change it.
- */
-export const appState = {
-  startingStock: null, // Stock | null
-  targetShape: null, // TargetShape | null
-  steps: [], // ForgeStep[]
-  currentStockState: null, // BarState | null
-  lastGeometryRun: null, // { baseBar, finalState, snapshots } | null
+/* ------------------------------------------------------------------------- */
+/* Constants / tolerance settings                                            */
+/* ------------------------------------------------------------------------- */
 
-  // Phase 5: volume budget summary
-  volumeSummary: {
+const VOLUME_REL_TOL = 0.05; // 5% relative tolerance for “conserved” steps
+const VOLUME_ABS_TOL = 1e-4; // tiny absolute tolerance for numerical noise
+const EXTREME_REMOVAL_FRACTION = 0.75; // warn if a single step removes >75%
+const EXTREME_ADDITION_FRACTION = 0.75; // warn if a single step adds >75%
+
+/* ------------------------------------------------------------------------- */
+/* Helpers                                                                   */
+/* ------------------------------------------------------------------------- */
+
+function makeEmptyVolumeSummary() {
+  return {
     startingVolume: NaN,
     targetVolume: NaN,
     removedVolume: 0,
@@ -40,7 +43,31 @@ export const appState = {
     netVolume: NaN,
     predictedFinalVolume: NaN,
     volumeWarnings: [], // human-readable warning strings
-  },
+  };
+}
+
+/**
+ * Normalize a maybe-number into a finite number or NaN.
+ */
+function asFiniteOrNaN(val) {
+  if (val === null || val === undefined || val === "") return NaN;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Global app state                                                          */
+/* ------------------------------------------------------------------------- */
+
+export const appState = {
+  startingStock: null, // Stock | null
+  targetShape: null, // TargetShape | null
+  steps: [], // ForgeStep[]
+  currentStockState: null, // Stock | null – after last step
+  lastGeometryRun: null, // { baseBar, finalState, snapshots } | null
+
+  // Phase 5: volume budget summary
+  volumeSummary: makeEmptyVolumeSummary(),
 };
 
 /**
@@ -50,176 +77,337 @@ export function getAppState() {
   return appState;
 }
 
-/* -------------------------------------------------------------------------
- * Volume budget helpers (Phase 5)
- * ---------------------------------------------------------------------- */
-
-/**
- * Internal utility to normalize a maybe-number into either a finite number
- * or NaN.
- */
-function asFiniteOrNaN(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : NaN;
-}
+/* ------------------------------------------------------------------------- */
+/* Core recompute pipeline                                                   */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Recompute appState.volumeSummary based on:
- * - startingStock (via computeStockVolume)
- * - targetShape.volume (if present)
- * - steps[] (via summarizeStepsVolumeEffect)
- *
- * This doesn't touch geometry; recomputeTimeline() calls it after its work.
+ * - startingStock volume
+ * - currentStockState (if known) or a heuristic final volume
+ * - steps’ total removed/added volume
+ * - targetShape volume (if set)
  */
 function recomputeVolumeSummary() {
-  // 1) Starting volume
-  const startingVolume = asFiniteOrNaN(
-    appState.startingStock ? computeStockVolume(appState.startingStock) : NaN
-  );
+  const vs = makeEmptyVolumeSummary();
 
-  // 2) Target volume (if any)
+  const startingVolume = appState.startingStock
+    ? computeStockVolume(appState.startingStock)
+    : NaN;
+
+  const currentVolume = appState.currentStockState
+    ? computeStockVolume(appState.currentStockState)
+    : NaN;
+
+  const { removed, added } = summarizeStepsVolumeEffect(appState.steps || []);
+
   let targetVolume = NaN;
-  if (appState.targetShape && "volume" in appState.targetShape) {
-    targetVolume = asFiniteOrNaN(appState.targetShape.volume);
+  if (appState.targetShape && typeof appState.targetShape.isVolumeValid === "function") {
+    if (appState.targetShape.isVolumeValid()) {
+      targetVolume = asFiniteOrNaN(appState.targetShape.volume);
+    }
   }
 
-  // 3) Sum volume removed/added across steps using their ForgeStep.volumeDelta
-  const { removed, added } = summarizeStepsVolumeEffect(appState.steps);
-  const removedVolume = asFiniteOrNaN(removed) || 0;
-  const addedVolume = asFiniteOrNaN(added) || 0;
+  vs.startingVolume = Number.isFinite(startingVolume) ? startingVolume : NaN;
+  vs.targetVolume = Number.isFinite(targetVolume) ? targetVolume : NaN;
+  vs.removedVolume = removed;
+  vs.addedVolume = added;
 
-  let predictedFinalVolume = NaN;
-  let netVolume = NaN;
-
-  if (Number.isFinite(startingVolume)) {
-    // Simple heuristic: starting - removed + added
-    netVolume = startingVolume - removedVolume + addedVolume;
-    predictedFinalVolume = netVolume;
+  if (Number.isFinite(startingVolume) && Number.isFinite(currentVolume)) {
+    vs.predictedFinalVolume = currentVolume;
+    vs.netVolume = currentVolume - startingVolume;
+  } else {
+    vs.predictedFinalVolume = NaN;
+    vs.netVolume = NaN;
   }
 
   const warnings = [];
 
-  // 4) Heuristic sanity checks vs starting volume
-  if (Number.isFinite(startingVolume) && Number.isFinite(predictedFinalVolume)) {
-    if (predictedFinalVolume < 0) {
+  // Basic sanity checks
+  if (!appState.startingStock) {
+    warnings.push("Set a starting stock to enable volume budget checks.");
+  }
+
+  if (!Number.isFinite(startingVolume)) {
+    warnings.push(
+      "Starting stock volume could not be computed; volume checks may be unreliable."
+    );
+  }
+
+  if (
+    Number.isFinite(startingVolume) &&
+    Number.isFinite(currentVolume)
+  ) {
+    if (currentVolume < 0) {
       warnings.push(
         "Heuristic steps remove more volume than you started with. This is physically impossible—check your cut, punch, and trim volume estimates."
       );
     } else {
-      const ratio = predictedFinalVolume / startingVolume;
+      const ratio = currentVolume / startingVolume;
 
       if (ratio < 0.4) {
         warnings.push(
-          "Heuristic steps remove a very large fraction of the starting stock (more than ~60%). Double-check cut lengths, punch diameters, and other removal steps."
+          "Heuristic steps remove a very large fraction of the starting material. Double-check cut lengths, punch diameters, and other removal steps."
         );
       } else if (ratio > 1.6) {
         warnings.push(
-          "Heuristic steps add a lot of material (more than ~60% over starting stock). Confirm weld and collar volume estimates are realistic."
+          "Heuristic steps add a lot of material (more than ~60% of the starting volume). Make sure welded or collared pieces have realistic dimensions."
         );
       }
     }
   }
 
-  // 5) Compare against target shape's volume
-  if (Number.isFinite(targetVolume) && Number.isFinite(predictedFinalVolume)) {
-    const diff = Math.abs(predictedFinalVolume - targetVolume);
+  // Compare to target shape if we know its volume
+  if (
+    Number.isFinite(targetVolume) &&
+    Number.isFinite(vs.predictedFinalVolume)
+  ) {
+    const diff = Math.abs(vs.predictedFinalVolume - targetVolume);
     const rel = targetVolume > 0 ? diff / targetVolume : 0;
 
     if (rel > 0.15) {
       warnings.push(
-        "Predicted final stock volume and target shape volume differ by more than ~15%. Consider tweaking step volume estimates or target dimensions."
+        "Predicted final volume is far from the target shape volume. This storyboard may need more steps (or different dimensions) to match the goal."
       );
     }
   }
 
-  appState.volumeSummary = {
-    startingVolume,
-    targetVolume,
-    removedVolume,
-    addedVolume,
-    netVolume,
-    predictedFinalVolume,
-    volumeWarnings: warnings,
-  };
+  vs.volumeWarnings = warnings;
+  appState.volumeSummary = vs;
 }
 
-/* -------------------------------------------------------------------------
- * Geometry recomputation
- * ---------------------------------------------------------------------- */
-
 /**
- * Re-run the geometry engine and volume bookkeeping based on the current
- * startingStock and steps[].
- *
- * - If startingStock is null, we clear currentStockState and lastGeometryRun.
- * - Otherwise, we build a BarState from the stock and apply steps.
- *
- * This is the central “recompute everything” entry point used by setters
- * below and by any UI that wants to force a full refresh.
+ * Primary recompute function:
+ * - Runs the geometry engine (BarState) for shape evolution snapshots
+ * - Walks Stock → step → Stock via volumeEngine.applyOperationToStock
+ *   to compute per-step resulting stock snapshots + per-step conservation
+ *   flags
+ * - Updates appState.currentStockState and appState.volumeSummary
  */
 export function recomputeTimeline() {
-  if (!appState.startingStock) {
-    appState.currentStockState = null;
+  const startingStock = appState.startingStock || null;
+  const steps = appState.steps || [];
+
+  /* ---- 1) Geometry engine: authoritative shape evolution ---- */
+
+  if (startingStock) {
+    try {
+      const baseBar = barStateFromStock(startingStock);
+      const { finalState, snapshots } = applyStepsToBar(baseBar, steps);
+      appState.lastGeometryRun = {
+        baseBar,
+        finalState,
+        snapshots,
+      };
+    } catch (err) {
+      console.error("[appState] Error running geometry engine:", err);
+      appState.lastGeometryRun = null;
+    }
+  } else {
     appState.lastGeometryRun = null;
-    // Still recompute volume summary so it reflects "no stock"
-    recomputeVolumeSummary();
-    return;
   }
 
-  try {
-    const baseBar = barStateFromStock(appState.startingStock);
-    const { finalState, snapshots } = applyStepsToBar(baseBar, appState.steps);
+  /* ---- 2) Volume engine: Stock → step → Stock chain ---- */
 
-    appState.currentStockState = finalState;
-    appState.lastGeometryRun = { baseBar, finalState, snapshots };
-  } catch (err) {
-    console.error("[appState] recomputeTimeline failed:", err);
-    appState.currentStockState = null;
-    appState.lastGeometryRun = null;
+  // Reset per-step snapshots & conservation flags before recomputing
+  steps.forEach((step) => {
+    if (!step) return;
+    if (typeof step.setResultingSnapshot === "function") {
+      step.setResultingSnapshot(null, null);
+    }
+    if (typeof step.setConservationResult === "function") {
+      step.setConservationResult(null, null);
+    }
+  });
+
+  let currentStock = startingStock || null;
+  let prevVolume =
+    currentStock && typeof currentStock.computeVolume === "function"
+      ? asFiniteOrNaN(currentStock.computeVolume())
+      : NaN;
+
+  if (!currentStock && steps.length) {
+    // We can’t say much about per-step volume without starting stock.
+    steps.forEach((step) => {
+      if (!step) return;
+      if (typeof step.setConservationResult === "function") {
+        step.setConservationResult(
+          "unknown",
+          "No starting stock set; volume checks are disabled for this step."
+        );
+      }
+    });
+  } else {
+    steps.forEach((step) => {
+      if (!step || !currentStock) return;
+
+      let nextStock = currentStock;
+      let nextVolume = prevVolume;
+
+      try {
+        nextStock = applyOperationToStock(currentStock, step);
+        if (nextStock && typeof nextStock.computeVolume === "function") {
+          nextVolume = asFiniteOrNaN(nextStock.computeVolume());
+        } else {
+          nextVolume = NaN;
+        }
+      } catch (err) {
+        console.error("[appState] Error applying operation to stock:", err);
+        nextStock = currentStock;
+        nextVolume = prevVolume;
+      }
+
+      if (typeof step.setResultingSnapshot === "function") {
+        step.setResultingSnapshot(nextStock, nextVolume);
+      }
+
+      // Per-step conservation / sanity checks
+      let status = "unknown";
+      let issue = null;
+
+      const massType =
+        step.massChangeType ||
+        getOperationMassChangeType(step.operationType) ||
+        "conserved";
+
+      const volDeltaRaw = asFiniteOrNaN(step.volumeDelta);
+      const volDelta = volDeltaRaw > 0 ? volDeltaRaw : 0;
+
+      if (Number.isFinite(prevVolume) && Number.isFinite(nextVolume)) {
+        const actualDelta = nextVolume - prevVolume; // negative for removal
+
+        if (massType === "conserved") {
+          const expectedAfter = prevVolume - volDelta;
+          const diff = Math.abs(nextVolume - expectedAfter);
+          const rel =
+            expectedAfter > 0 ? diff / Math.max(expectedAfter, 1e-9) : 0;
+
+          if (diff <= VOLUME_ABS_TOL || rel <= VOLUME_REL_TOL) {
+            status = "ok";
+          } else {
+            status = "warning";
+            issue = `Volume-conserving step changed volume more than expected (ΔV ≈ ${diff.toFixed(
+              3
+            )} units³). Check dimensions or overrides.`;
+          }
+        } else if (massType === "removed" && volDelta > 0 && prevVolume > 0) {
+          const expectedDelta = -volDelta;
+          const diff = Math.abs(actualDelta - expectedDelta);
+          const rel = diff / Math.max(volDelta, 1e-9);
+
+          if (diff <= VOLUME_ABS_TOL || rel <= 0.15) {
+            status = "ok";
+          } else {
+            status = "warning";
+            issue = `Removal step’s volume change (ΔV ≈ ${actualDelta.toFixed(
+              3
+            )} units³) doesn’t match the input (~${expectedDelta.toFixed(
+              3
+            )}).`;
+          }
+
+          if (volDelta > prevVolume * EXTREME_REMOVAL_FRACTION) {
+            status = "warning";
+            issue =
+              issue ||
+              "This step removes most of the available stock. Double-check cut lengths and punch diameters.";
+          }
+        } else if (massType === "added" && volDelta > 0 && prevVolume > 0) {
+          const expectedDelta = volDelta;
+          const diff = Math.abs(actualDelta - expectedDelta);
+          const rel = diff / Math.max(volDelta, 1e-9);
+
+          if (diff <= VOLUME_ABS_TOL || rel <= 0.15) {
+            status = status === "warning" ? "warning" : "ok";
+          } else {
+            status = "warning";
+            issue = `Addition step’s volume change (ΔV ≈ ${actualDelta.toFixed(
+              3
+            )} units³) doesn’t match the input (~${expectedDelta.toFixed(
+              3
+            )}).`;
+          }
+
+          if (volDelta > prevVolume * EXTREME_ADDITION_FRACTION) {
+            status = "warning";
+            issue =
+              issue ||
+              "This step adds a very large amount of material compared to the current stock. Check welded/collared piece dimensions.";
+          }
+        } else {
+          // No strong opinion; treat as OK if we can’t detect anything odd.
+          status = "ok";
+        }
+      } else if (!Number.isFinite(prevVolume) || !Number.isFinite(nextVolume)) {
+        status = "unknown";
+        issue =
+          "Volume could not be computed for this step; check stock dimensions.";
+      }
+
+      if (typeof step.setConservationResult === "function") {
+        step.setConservationResult(status, issue);
+      }
+
+      currentStock = nextStock;
+      prevVolume = nextVolume;
+    });
   }
 
-  // After geometry, always update the volume budget.
+  appState.currentStockState = currentStock;
+
+  /* ---- 3) Global volume summary + warnings (including per-step issues) ---- */
+
   recomputeVolumeSummary();
+
+  // Add per-step warnings into the global volume summary
+  const stepWarnings = [];
+  (appState.steps || []).forEach((step, index) => {
+    if (
+      step &&
+      step.conservationStatus === "warning" &&
+      step.conservationIssue
+    ) {
+      stepWarnings.push(
+        `Step ${index + 1} (${step.label}): ${step.conservationIssue}`
+      );
+    }
+  });
+
+  if (stepWarnings.length && appState.volumeSummary) {
+    appState.volumeSummary.volumeWarnings = [
+      ...(appState.volumeSummary.volumeWarnings || []),
+      ...stepWarnings,
+    ];
+  }
 }
 
-/* -------------------------------------------------------------------------
- * Stock + target mutators
- * ---------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* State mutation helpers                                                    */
+/* ------------------------------------------------------------------------- */
 
 /**
- * Set or replace the starting stock.
- * Passing null clears the starting stock.
- *
- * Usually called from the Starting Stock form handler in main.js.
+ * Set the global starting stock and recompute the timeline.
  */
 export function setStartingStock(stock) {
   appState.startingStock = stock || null;
-  // When starting stock changes, the geometry & volume must be recomputed.
+  // Changing starting stock invalidates current bar & geometry run.
+  appState.currentStockState = null;
+  appState.lastGeometryRun = null;
   recomputeTimeline();
 }
 
 /**
- * Set or replace the target shape.
- * Passing null clears the target shape.
- *
- * This does NOT change the geometry—only the comparison / warnings.
- * Usually called from the Target Shape form handler in main.js.
+ * Set the global target shape and recompute volume summary
+ * (timeline doesn’t change; we just compare against a new target).
  */
 export function setTargetShape(targetShape) {
   appState.targetShape = targetShape || null;
-  // Updating target only affects the volume comparison & warnings.
+  // Timeline is unchanged, but volumeSummary needs to consider new target.
   recomputeVolumeSummary();
 }
 
-/* -------------------------------------------------------------------------
- * Step mutators
- * ---------------------------------------------------------------------- */
-
 /**
- * Append a new ForgeStep to the steps list.
- * Caller is responsible for constructing the ForgeStep instance.
- *
- * After adding, we recompute geometry + volume.
+ * Add a new ForgeStep to the plan and recompute.
  */
 export function addStep(step) {
   if (!step) return;
@@ -228,38 +416,34 @@ export function addStep(step) {
 }
 
 /**
- * Clear all ForgeSteps.
- * Used when resetting the storyboard or starting over.
+ * Remove a step by its id (as used by ForgeStep.id).
+ */
+export function removeStep(stepId) {
+  if (!stepId) return;
+  appState.steps = (appState.steps || []).filter((s) => s && s.id !== stepId);
+  recomputeTimeline();
+}
+
+/**
+ * Clear all steps and recompute.
  */
 export function clearSteps() {
-  if (!appState.steps.length) return;
   appState.steps = [];
   recomputeTimeline();
 }
 
 /**
- * Remove a single step by id.
- *
- * @param {number|string} stepId
- * @returns {boolean} true if a step was removed
+ * Completely reset the storyboard: starting stock, target, steps, and summaries.
  */
-export function removeStep(stepId) {
-  if (!stepId) return false;
-
-  const beforeCount = appState.steps.length;
-  appState.steps = appState.steps.filter((s) => s && s.id !== stepId);
-  const removed = appState.steps.length < beforeCount;
-
-  if (removed) {
-    recomputeTimeline();
-  }
-
-  return removed;
+export function clearAll() {
+  appState.startingStock = null;
+  appState.targetShape = null;
+  appState.steps = [];
+  appState.currentStockState = null;
+  appState.lastGeometryRun = null;
+  appState.volumeSummary = makeEmptyVolumeSummary();
 }
 
-/* -------------------------------------------------------------------------
- * (Optional) future helpers
- * ---------------------------------------------------------------------- */
 /**
  * Simple debugging helper to log the current state.
  * Not used by UI, but handy when poking in the console.
