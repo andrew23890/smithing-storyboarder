@@ -170,10 +170,11 @@ function setupStockForm() {
 
     switch (shape) {
       case "square":
+        // Square stock: one dimension only; hide dim-b.
         dimALabel.textContent = "Side (a)";
-        dimBLabel.textContent = "Side (b)";
+        dimBLabel.textContent = "Secondary dimension (unused for square)";
         if (dimBField) {
-          dimBField.style.display = "";
+          dimBField.style.display = "none";
         }
         break;
       case "round":
@@ -214,14 +215,19 @@ function setupStockForm() {
     const shape = shapeSelect.value || "square";
 
     const dimA = Number(dimAInput.value);
-    const dimB = dimBInput ? Number(dimBInput.value) : NaN;
+    const dimBRaw = dimBInput ? dimBInput.value : "";
+    const dimB =
+      dimBRaw === "" || dimBRaw === null || dimBRaw === undefined
+        ? null
+        : Number(dimBRaw);
     const length = Number(lengthInput.value);
     const units = unitsSelect.value || "in";
 
     let hasError = false;
 
-    if (!shape) {
+    if (!shapeSelect.value) {
       setStockFieldError(
+        shapeSelect,
         "stock-shape-error",
         "Please choose a basic stock shape."
       );
@@ -230,30 +236,35 @@ function setupStockForm() {
 
     if (!(dimA > 0)) {
       setStockFieldError(
+        dimAInput,
         "stock-dim-a-error",
         "Primary dimension must be a positive number."
       );
       hasError = true;
     }
 
-    if (shape !== "round" && !(dimB > 0)) {
+    // For flat/rectangle, we require dimB; for round/square it's ignored.
+    if ((shape === "flat" || shape === "rectangle") && !(dimB > 0)) {
       setStockFieldError(
+        dimBInput,
         "stock-dim-b-error",
-        "Secondary dimension must be a positive number."
+        "Secondary dimension must be a positive number for flat/rectangular stock."
       );
       hasError = true;
     }
 
     if (!(length > 0)) {
       setStockFieldError(
+        lengthInput,
         "stock-length-error",
         "Length must be a positive number."
       );
       hasError = true;
     }
 
-    if (!units) {
+    if (!unitsSelect.value) {
       setStockFieldError(
+        unitsSelect,
         "stock-units-error",
         "Please choose units for this stock."
       );
@@ -273,7 +284,8 @@ function setupStockForm() {
         material,
         shape,
         dimA,
-        dimB: shape === "round" ? null : dimB,
+        // Square & round are single-dimension cross-sections; dimB ignored.
+        dimB: shape === "round" || shape === "square" ? null : dimB,
         length,
         units,
       });
@@ -288,7 +300,7 @@ function setupStockForm() {
         material,
         shape,
         dimA,
-        dimB,
+        dimB: stock.dimB,
         length,
         units,
         volume: computeStockVolume(stock),
@@ -466,7 +478,9 @@ function setupStepsUI() {
   const volumeDeltaLabel = document.getElementById("steps-volume-delta-label");
   const clearBtn = document.getElementById("steps-clear-btn");
 
-  const lengthLabelEl = document.querySelector('label[for="steps-param-length"]');
+  const lengthLabelEl = document.querySelector(
+    'label[for="steps-param-length"]'
+  );
   const locationLabelEl = document.querySelector(
     'label[for="steps-param-location"]'
   );
@@ -481,6 +495,31 @@ function setupStepsUI() {
     console.error("[Steps] Required step form elements are missing in the DOM.");
     return;
   }
+
+  // --------- Populate operations dropdown from operations.js --------- //
+
+  function populateOperationSelect() {
+    // Clear any existing options
+    opSelect.innerHTML = "";
+
+    // Placeholder option
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select operation…";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    opSelect.appendChild(placeholder);
+
+    // One option per canonical operation type
+    Object.values(FORGE_OPERATION_TYPES).forEach((opType) => {
+      const opt = document.createElement("option");
+      opt.value = opType;
+      opt.textContent = getOperationLabel(opType) || opType;
+      opSelect.appendChild(opt);
+    });
+  }
+
+  populateOperationSelect();
 
   // ------------------ Param config per operation (Phase 5.1) ------------------ //
 
@@ -813,7 +852,7 @@ function setupStepsUI() {
     applyParamConfigForOperation(opSelect.value);
   });
 
-  // Initialize labels on load
+  // Initialize labels on load (with whatever current opSelect value is)
   updateVolumeDeltaLabel();
   applyParamConfigForOperation(opSelect.value);
 
@@ -997,7 +1036,8 @@ function setupGeometrySimulationUI() {
       if (step.summary) {
         text += `  ${step.summary}\n`;
       }
-      text += `  Resulting bar: ${snap.bar.describe()}\n\n`;
+      // NOTE: snapshots currently contain stateDescription; we use that here.
+      text += `  Resulting bar: ${snap.stateDescription}\n\n`;
     });
 
     text += "Final bar state:\n";
