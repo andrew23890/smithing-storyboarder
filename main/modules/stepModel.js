@@ -6,6 +6,7 @@
 // - Represent a single forge step (ForgeStep)
 // - Attach human-friendly labels + summaries
 // - Track mass-change classification + volume delta
+// - Store a resulting stock snapshot + volume per step
 // - Provide a summary helper for the entire step list
 //
 // Heuristic-specific logic (volume estimates, notes, etc.) lives in
@@ -22,6 +23,10 @@ import {
 } from "./operationLogic.js";
 
 let STEP_ID_COUNTER = 1;
+
+/* -------------------------------------------------------------------------
+ * Small helpers
+ * ---------------------------------------------------------------------- */
 
 /**
  * Normalize a raw numeric value (possibly string) into a finite number,
@@ -49,9 +54,9 @@ function extractLocationHint(params = {}) {
   ];
 
   for (const key of keys) {
-    const v = params[key];
-    if (typeof v === "string" && v.trim()) {
-      return v.trim();
+    const val = params[key];
+    if (typeof val === "string" && val.trim()) {
+      return val.trim();
     }
   }
 
@@ -59,7 +64,7 @@ function extractLocationHint(params = {}) {
 }
 
 /**
- * Build a short, human-friendly description for the step.
+ * Build a human-friendly sentence summarizing a step from its params.
  * This is intentionally loose and not mathematically exact—just a readable hint.
  */
 function buildStepSummary(step) {
@@ -78,21 +83,23 @@ function buildStepSummary(step) {
   const twistDeg = toNumberOrNull(params.twistDegrees);
   const holeDiameter = toNumberOrNull(params.holeDiameter);
   const scrollDiameter = toNumberOrNull(params.scrollDiameter);
-  const countTurns = toNumberOrNull(params.twistTurns ?? params.turns);
+  const countTurns = toNumberOrNull(params.twistTurns);
+  const upsetAmount = toNumberOrNull(params.upsetAmount);
 
-  let pieces = [];
+  const pieces = [];
 
-  // Base instruction
+  // Basic label
   pieces.push(label);
 
+  // Location hint
   if (location) {
-    pieces.push(`at ${location}`);
+    pieces.push(`@ ${location}`);
   }
 
-  // Operation-flavored tweaks
+  // Operation-specific hints
   switch (step.operationType) {
     case "draw_out":
-      if (length) pieces.push(`over about ${length} units of length`);
+      if (length) pieces.push(`over ~${length} units of length`);
       break;
 
     case "taper":
@@ -113,9 +120,14 @@ function buildStepSummary(step) {
         pieces.push(`into a scroll around ~${scrollDiameter} units diameter`);
       break;
 
+    case "upset":
+      if (upsetAmount)
+        pieces.push(`upsetting by roughly ${upsetAmount}% in thickness/section`);
+      break;
+
     case "punch":
       if (holeDiameter)
-        pieces.push(`with a hole ~${holeDiameter} units in diameter`);
+        pieces.push(`punching a hole ~${holeDiameter} units across`);
       break;
 
     case "cut":
@@ -150,34 +162,25 @@ function buildStepSummary(step) {
     // conserved
     const vol = toNumberOrNull(step.volumeDelta);
     if (vol && vol > 0) {
-      pieces.push(
-        `(roughly conserved; models ~${vol.toFixed(
-          2
-        )} volume-units of scale/fines)`
-      );
+      pieces.push(`(~${vol.toFixed(2)} volume-units lost to scale/grinding)`);
     } else {
-      pieces.push("(mostly conserves volume)");
+      pieces.push("(mostly conserves mass)");
     }
   }
 
   return pieces.join(" ");
 }
 
-/**
- * Represents a major forging step in the storyboard.
- *
- * - operationType: one of FORGE_OPERATION_TYPES (string)
- * - params: operation-specific details (length, angle, location, etc.)
- * - massChangeType: "conserved" | "removed" | "added"
- * - volumeDelta: magnitude of volume changed due to this step,
- *   always a non-negative number in "stock units³".
- *
- * Phase 5 additions:
- * - suggestedVolumeDelta: heuristic suggestion (can be 0)
- * - forgeNote: human-friendly ForgeAI note about what the operation does
- * - descriptionHint: one-line hint suitable for tooltips
- */
+/* -------------------------------------------------------------------------
+ * ForgeStep model
+ * ---------------------------------------------------------------------- */
+
 export class ForgeStep {
+  /**
+   * @param {string} operationType
+   * @param {object} params
+   * @param {object|null} startingStockState - optional Stock/BarState for heuristics
+   */
   constructor(operationType, params = {}, startingStockState = null) {
     this.id = STEP_ID_COUNTER++;
     this.operationType = operationType;
@@ -229,6 +232,15 @@ export class ForgeStep {
       : heuristic?.notes || "";
     this.descriptionHint = heuristic?.descriptionHint || "";
 
+    // Phase 5: resulting stock snapshot & conservation status
+    //
+    // These are populated during appState.recomputeTimeline()
+    // via volumeEngine.applyOperationToStock.
+    this.resultingStockSnapshot = null; // { material, shape, dimA, dimB, length, units }
+    this.resultingVolume = null; // numeric volume (same units³ as stock)
+    this.conservationStatus = null; // "ok" | "warning" | "unknown" | null
+    this.conservationIssue = null; // short text description if warning
+
     // Cached summary (can be recomputed by calling buildStepSummary(this)).
     this.summary = buildStepSummary(this);
   }
@@ -242,10 +254,62 @@ export class ForgeStep {
   }
 
   /**
-   * Helper when serializing to JSON or localStorage.
-   * (Plain object representation—no methods.)
+   * Phase 5: attach a resulting stock snapshot & volume to this step.
+   * This should be called by appState.recomputeTimeline() after running
+   * volumeEngine.applyOperationToStock().
+   *
+   * @param {object|null} stock - Stock instance or stock-like object
+   * @param {number|null} volume - optional precomputed volume
    */
-  toJSON() {
+  setResultingSnapshot(stock, volume = null) {
+    if (!stock) {
+      this.resultingStockSnapshot = null;
+      this.resultingVolume = volume != null ? Number(volume) : null;
+      return;
+    }
+
+    // Store a small, serializable snapshot instead of a full class instance.
+    const snapshot = {
+      material: stock.material ?? "steel",
+      shape: stock.shape ?? "square",
+      dimA: stock.dimA ?? null,
+      dimB: stock.dimB ?? null,
+      length: stock.length ?? null,
+      units: stock.units ?? "units",
+    };
+
+    this.resultingStockSnapshot = snapshot;
+
+    if (volume != null) {
+      const v = Number(volume);
+      this.resultingVolume = Number.isFinite(v) ? v : null;
+    } else if (typeof stock.computeVolume === "function") {
+      try {
+        const v = Number(stock.computeVolume());
+        this.resultingVolume = Number.isFinite(v) ? v : null;
+      } catch {
+        this.resultingVolume = null;
+      }
+    }
+  }
+
+  /**
+   * Phase 5: store per-step conservation feedback.
+   *
+   * @param {("ok"|"warning"|"unknown"|null)} status
+   * @param {string|null} issue
+   */
+  setConservationResult(status, issue = null) {
+    this.conservationStatus = status || null;
+    this.conservationIssue =
+      typeof issue === "string" && issue.trim() ? issue.trim() : null;
+  }
+
+  /**
+   * Convert to a plain JSON-serializable object.
+   * Useful for localStorage or exporting plans.
+   */
+  toPlainObject() {
     return {
       id: this.id,
       operationType: this.operationType,
@@ -256,6 +320,11 @@ export class ForgeStep {
       forgeNote: this.forgeNote,
       descriptionHint: this.descriptionHint,
       summary: this.summary,
+      // Phase 5 additions:
+      resultingStockSnapshot: this.resultingStockSnapshot,
+      resultingVolume: this.resultingVolume,
+      conservationStatus: this.conservationStatus,
+      conservationIssue: this.conservationIssue,
     };
   }
 
@@ -288,10 +357,41 @@ export class ForgeStep {
       step.descriptionHint = data.descriptionHint;
     }
 
-    step.summary = buildStepSummary(step);
+    if (typeof data.summary === "string") {
+      step.summary = data.summary;
+    } else {
+      step.recomputeSummary();
+    }
+
+    // Phase 5: rehydrate snapshot & conservation fields if present.
+    if (data.resultingStockSnapshot) {
+      step.resultingStockSnapshot = {
+        material: data.resultingStockSnapshot.material ?? "steel",
+        shape: data.resultingStockSnapshot.shape ?? "square",
+        dimA: data.resultingStockSnapshot.dimA ?? null,
+        dimB: data.resultingStockSnapshot.dimB ?? null,
+        length: data.resultingStockSnapshot.length ?? null,
+        units: data.resultingStockSnapshot.units ?? "units",
+      };
+    }
+
+    const rv = toNumberOrNull(data.resultingVolume);
+    step.resultingVolume = rv !== null ? rv : null;
+
+    if (data.conservationStatus) {
+      step.conservationStatus = data.conservationStatus;
+    }
+    if (typeof data.conservationIssue === "string") {
+      step.conservationIssue = data.conservationIssue;
+    }
+
     return step;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Aggregation helpers
+ * ---------------------------------------------------------------------- */
 
 /**
  * Compute total volume removed and added across the given steps.
