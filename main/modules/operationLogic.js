@@ -1,12 +1,14 @@
 // main/modules/operationLogic.js
 //
 // Heuristic logic for forge operations (Roadmap Phase 5).
-// - Suggest default parameter shapes for each operation
-// - Estimate volume delta for steps based on params + starting stock
+// - Define canonical parameter *shapes* for each operation (getDefaultParams)
+// - Estimate volume deltas for steps based on params + starting stock
 // - Provide human-friendly ForgeAI notes
-// - Wrap everything in getOperationHeuristic() for easy use from UI/appState
+// - Wrap everything in getOperationHeuristic() for easy use
 //
-// This module is deliberately UI-agnostic. It works purely with data objects.
+// This module is UI-agnostic. It only works with plain data objects.
+// The UI (main.js + steps UI) will use getDefaultParams() as the single
+// source of truth for which parameters each operation expects.
 
 import {
   FORGE_OPERATION_TYPES,
@@ -106,153 +108,189 @@ function estimateCrossSectionArea(shape, dimA, dimB = null) {
  *
  * These are *shapes* of expected parameters; values are intentionally
  * empty/null so the UI can decide how to present them.
+ *
+ * IMPORTANT:
+ * - Keys here are the canonical names that other logic (volume, heuristics,
+ *   UI mapping) will rely on.
+ * - main.js should map its generic "length/location" text fields onto
+ *   the appropriate keys from this template.
  */
 export function getDefaultParams(operationType) {
   switch (operationType) {
-    // ------------------ Shape / conserved ops ------------------ //
+    // ------------------ Shape / mass-conserved ops ------------------ //
     case FORGE_OPERATION_TYPES.DRAW_OUT:
+      // Phase 5 spec: start length vs end length, section change.
       return {
-        lengthRegion: "", // e.g. "last 4\" of bar"
-        startLength: null,
-        targetLength: null,
-        reductionPercent: null, // % reduction in thickness
+        lengthRegion: "",            // where on the bar (e.g. "last 4\"")
+        startLength: null,           // original length of that region
+        targetLength: null,          // final length of that region
+        sectionChange: "",           // e.g. "square → octagon", optional text
+        reductionPercent: null,      // % reduction in thickness (optional)
+        description: "",             // user-facing text
       };
 
     case FORGE_OPERATION_TYPES.TAPER:
+      // Phase 5 spec: from dimension, to dimension, length.
       return {
-        lengthRegion: "",
-        fromSize: "",
-        toSize: "",
-        direction: "tip", // "tip" | "center" | "both_ends"
+        lengthRegion: "",            // length of taper along bar
+        fromSize: null,              // starting cross-section size (dim or side)
+        toSize: null,                // final size at tip
+        direction: "tip",            // "tip" | "center" | "both_ends"
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.UPSET:
       return {
-        lengthRegion: "",
-        upsetAmount: null, // % thickening or length lost
-        direction: "end", // "end" | "mid"
+        lengthRegion: "",            // region being upset
+        upsetAmount: null,           // % thickening or length lost
+        direction: "end",            // "end" | "mid"
+        location: "",                // plain-language position notes
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.BEND:
+      // Phase 5 spec: location, angle, inside radius.
       return {
-        location: "",
-        angleDeg: null,
-        insideRadius: null,
+        location: "",                // e.g. "3\" from end"
+        angleDeg: null,              // e.g. 90
+        insideRadius: null,          // bend radius, same units as stock
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.SCROLL:
       return {
-        location: "",
-        scrollDiameter: null,
-        turns: null,
+        location: "",                // where scroll starts
+        scrollDiameter: null,        // scroll outside diameter
+        turns: null,                 // number of turns (optional)
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.TWIST:
       return {
-        lengthRegion: "",
-        twistDegrees: null,
-        twistTurns: null, // optional alternative
-        direction: "right", // "right" | "left"
+        lengthRegion: "",            // twisted length
+        twistDegrees: null,          // total twist in degrees
+        twistTurns: null,            // or full turns
+        direction: "right",          // "right" | "left"
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.FULLER:
       return {
-        location: "",
-        fullerWidth: null,
-        depth: null,
-        passes: null,
+        location: "",                // where the fuller will be
+        fullerWidth: null,           // fuller contact width
+        depth: null,                 // approximate groove depth
+        passes: null,                // number of passes
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.SECTION_CHANGE:
       return {
-        lengthRegion: "",
-        fromSection: "",
-        toSection: "",
+        lengthRegion: "",            // length of section being refined
+        fromSection: "",             // text like "square"
+        toSection: "",               // text like "octagon" / "round"
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.FLATTEN:
       return {
-        face: "broad", // "broad" | "edge"
-        lengthRegion: "",
-        targetThickness: null,
+        face: "broad",               // "broad" | "edge"
+        lengthRegion: "",            // how much length is flattened
+        targetThickness: null,       // desired thickness after flattening
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.STRAIGHTEN:
       return {
-        lengthRegion: "",
-        notes: "",
+        lengthRegion: "",            // where you're correcting
+        notes: "",                   // e.g. "remove S-bend"
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.SETDOWN:
       return {
-        location: "",
-        stepDepth: null,
-        stepLength: null,
+        location: "",                // e.g. "2\" from end"
+        stepDepth: null,             // how deep the shoulder is
+        stepLength: null,            // length of the set-down face
+        description: "",
       };
 
     // ------------------ Volume-removing ops ------------------ //
     case FORGE_OPERATION_TYPES.CUT:
+      // Phase 5 spec: removed piece dimensions/length.
       return {
-        cutLocation: "",
-        removedLength: null, // length of piece cut off
+        cutLocation: "",             // where the cut is along the bar
+        removedLength: null,         // length of the piece cut off
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.TRIM:
       return {
-        trimLocation: "",
-        removedLength: null,
+        trimLocation: "",            // e.g. "fins at edge"
+        removedLength: null,         // effective length of material removed
         notes: "",
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.SLIT:
       return {
-        location: "",
-        slitLength: null,
-        slitWidth: null,
+        location: "",                // where slit is
+        slitLength: null,            // slit length along bar
+        slitWidth: null,             // approximate kerf width
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.SPLIT:
       return {
-        location: "",
-        splitLength: null,
-        wedgeLossEstimate: null,
+        location: "",                // fork/split location
+        splitLength: null,           // length of forks
+        wedgeLossEstimate: null,     // extra volume lost as edges are refined
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.PUNCH:
+      // Phase 5 spec: dimensions of removed slug.
       return {
-        location: "",
-        holeDiameter: null,
-        holeDepth: null, // if omitted, assume through thickness
+        location: "",                // where the hole is
+        holeDiameter: null,          // punch diameter
+        holeDepth: null,             // if omitted, we will infer bar thickness
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.DRIFT:
       return {
-        location: "",
-        startHoleDiameter: null,
-        finalHoleDiameter: null,
-        extraRemovalVolume: null, // non-ideal loss, optional
+        location: "",                // where the hole is
+        startHoleDiameter: null,     // starting hole size
+        finalHoleDiameter: null,     // final size after drifting
+        extraRemovalVolume: null,    // any extra material lost at edges
+        description: "",
       };
 
     // ------------------ Volume-adding ops ------------------ //
     case FORGE_OPERATION_TYPES.WELD:
+      // Phase 5 spec: dimensions of added piece or explicit addedVolume.
       return {
-        location: "",
-        weldType: "scarf", // descriptive only
-        addedLength: null,
-        addedVolume: null,
+        location: "",                // joint location
+        weldType: "scarf",           // descriptive only
+        addedLength: null,           // length of piece welded on
+        addedVolume: null,           // if known explicitly
+        description: "",
       };
 
     case FORGE_OPERATION_TYPES.COLLAR:
       return {
-        location: "",
-        collarWidth: null,
-        collarThickness: null,
-        collarLength: null,
-        addedVolume: null,
+        location: "",                // where collar wraps the bar
+        collarWidth: null,           // collar width (around bar)
+        collarThickness: null,       // collar thickness
+        collarLength: null,          // length of strap wrapped
+        addedVolume: null,           // explicit if known
+        description: "",
       };
 
     default:
-      return {};
+      // Unknown operation: allow arbitrary params, but no strong opinion.
+      return {
+        description: "",
+      };
   }
 }
 
@@ -356,9 +394,11 @@ export function estimateVolumeDelta(
 ) {
   const massType = getOperationMassChangeType(operationType);
 
-  // Allow explicit override if user already provided a volume estimate
+  // Allow explicit override if user already provided a volume estimate.
+  // This is the highest priority.
   const explicitVolume = getNumericParam(params, [
     "volumeOverride",
+    "volumeDeltaOverride",
     "volumeDelta",
     "addedVolume",
     "extraRemovalVolume",
@@ -367,7 +407,7 @@ export function estimateVolumeDelta(
     return explicitVolume;
   }
 
-  // For conserved operations, default heuristic is ΔV ≈ 0
+  // For conserved operations, default heuristic is ΔV ≈ 0.
   if (massType === "conserved") {
     return 0;
   }
@@ -380,7 +420,7 @@ export function estimateVolumeDelta(
     case FORGE_OPERATION_TYPES.TRIM:
     case FORGE_OPERATION_TYPES.SLIT:
     case FORGE_OPERATION_TYPES.SPLIT: {
-      // Model as removing a simple prismatic chunk: area × removedLength
+      // Model as removing a simple prismatic chunk: area × removedLength.
       const removedLength = getNumericParam(params, [
         "removedLength",
         "length",
@@ -395,7 +435,7 @@ export function estimateVolumeDelta(
     }
 
     case FORGE_OPERATION_TYPES.PUNCH: {
-      // Punch removes a cylindrical slug: π r² * depth
+      // Punch removes a cylindrical slug: π r² * depth.
       const holeDiameter = getNumericParam(params, [
         "holeDiameter",
         "diameter",
@@ -405,7 +445,7 @@ export function estimateVolumeDelta(
 
       let depth = getNumericParam(params, ["holeDepth", "depth", "thickness"]);
       if (!(depth > 0)) {
-        // Fallback: approximate depth as bar thickness or primary dimension
+        // Fallback: approximate depth as bar thickness or primary dimension.
         if (startingStockState) {
           if ("dimB" in (startingStockState || {}) && startingStockState.dimB) {
             depth = Number(startingStockState.dimB);
