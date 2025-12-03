@@ -1,6 +1,6 @@
 // main/main.js
 // Entry point for the Smithing Storyboarder app.
-// Phase 4: central app state + UI helper modules.
+// Phase 5: central app state + UI helper modules + heuristic preview.
 
 import { forgeGreeting } from "./modules/hello.js";
 import { Stock } from "./modules/stockModel.js";
@@ -50,6 +50,11 @@ import {
   clearStepsError,
 } from "./modules/ui/stepsUI.js";
 
+import {
+  buildHeuristicPreviewFromAppState,
+  describeHeuristicPreview,
+} from "./modules/heuristicPreview.js";
+
 /* ----------------- HELLO BUTTON ----------------- */
 
 function setupHelloButton() {
@@ -64,6 +69,7 @@ function setupHelloButton() {
   button.addEventListener("click", () => {
     const message = forgeGreeting();
     output.textContent = message;
+    console.log("[ForgeAI Hello]", message);
   });
 }
 
@@ -120,6 +126,7 @@ function refreshStepsUI() {
       if (!step || !step.id) return;
       removeStep(step.id);
       refreshStepsUI();
+      refreshTargetUI();
     },
   });
 }
@@ -273,6 +280,8 @@ function setupStockForm() {
 
       setStartingStock(stock);
       refreshStockUI();
+      refreshStepsUI();
+      refreshTargetUI();
       clearStockError(errorEl);
 
       console.log("[StockForm] Starting stock set:", {
@@ -355,6 +364,7 @@ function setupTargetShapeForm() {
       setTargetShape(target);
       renderTargetSummary(appState, summaryEl);
       renderTargetComparison(appState, compareEl);
+      refreshStepsUI();
       clearTargetError(errorEl);
 
       console.log("[Target] Target shape set:", { target });
@@ -450,7 +460,7 @@ function setupStepsUI() {
   const addBtn = document.getElementById("step-add-btn");
   const errorEl = document.getElementById("steps-error");
 
-  // Optional extra fields for Phase 5 structured params
+  // Optional extra fields for structured params
   const lengthInput = document.getElementById("steps-param-length");
   const locationInput = document.getElementById("steps-param-location");
   const volumeDeltaLabel = document.getElementById("steps-volume-delta-label");
@@ -781,7 +791,7 @@ function setupStepsUI() {
     locationInput.dataset.numeric = cfg.location.numeric ? "true" : "false";
   }
 
-  // ------------------ Volume label logic (existing behavior) ------------------ //
+  // ------------------ Volume label logic ------------------ //
 
   function updateVolumeDeltaLabel() {
     if (!volumeDeltaLabel) return;
@@ -902,6 +912,7 @@ function setupStepsUI() {
 
       addStep(step);
       refreshStepsUI();
+      refreshTargetUI();
       clearStepsError(errorEl);
 
       // Reset the most common fields; keep operation type + units
@@ -923,6 +934,7 @@ function setupStepsUI() {
       evt.preventDefault();
       clearSteps();
       refreshStepsUI();
+      refreshTargetUI();
       clearStepsError(errorEl);
     });
   }
@@ -931,7 +943,7 @@ function setupStepsUI() {
   refreshStepsUI();
 }
 
-/* ----------------- GEOMETRY SIMULATION UI ----------------- */
+/* ----------------- GEOMETRY SIMULATION + HEURISTIC PREVIEW ----------------- */
 
 function setupGeometrySimulationUI() {
   console.log("[Geometry] Setting up geometry simulation UI…");
@@ -953,52 +965,45 @@ function setupGeometrySimulationUI() {
       return;
     }
 
-    clearTargetError(errorEl);
+    if (errorEl) errorEl.textContent = "";
 
-    try {
-      // recomputeTimeline() already updates currentStockState + snapshots
-      recomputeTimeline();
+    // 1) Always recompute timeline first (authoritative geometry view)
+    recomputeTimeline();
 
-      if (!appState.lastGeometryRun) {
-        outputEl.textContent =
-          "No geometry results available. Please add at least one step.";
-        return;
-      }
+    // 2) Build heuristic preview from current appState
+    const preview = buildHeuristicPreviewFromAppState(appState);
+    const previewText = describeHeuristicPreview(preview);
 
-      const { baseBar, snapshots, finalState } = appState.lastGeometryRun;
-
-      if (!appState.steps || appState.steps.length === 0) {
-        outputEl.textContent =
-          "No steps defined. The bar remains in its starting state:\n\n" +
-          baseBar.describe();
-        return;
-      }
-
-      let text = "";
-      text += "Starting bar state:\n";
-      text += `  ${baseBar.describe()}\n\n`;
-
-      snapshots.forEach((snap, idx) => {
-        const step = snap.step;
-        const opLabel = getOperationLabel(step.operationType);
-        text += `Step ${idx + 1}: ${opLabel}\n`;
-        if (step.summary) {
-          text += `  ${step.summary}\n`;
-        }
-        text += `  Resulting bar: ${snap.bar.describe()}\n\n`;
-      });
-
-      text += "Final bar state:\n";
-      text += `  ${finalState.describe()}\n`;
-
-      outputEl.textContent = text;
-    } catch (err) {
-      console.error("[Geometry] Error during simulation:", err);
-      if (errorEl) {
-        errorEl.textContent =
-          "There was a problem running the geometry simulation. Check the console for details.";
-      }
+    // 3) Build geometry narration if we have steps
+    if (!appState.lastGeometryRun || !appState.steps || !appState.steps.length) {
+      // No steps or no geometry snapshots – show preview only
+      outputEl.textContent = previewText;
+      return;
     }
+
+    const { baseBar, snapshots, finalState } = appState.lastGeometryRun;
+
+    let text = "";
+    text += previewText;
+    text += "\n\n=== Geometry simulation (segment engine) ===\n\n";
+
+    text += "Starting bar state:\n";
+    text += `  ${baseBar.describe()}\n\n`;
+
+    snapshots.forEach((snap, idx) => {
+      const step = snap.step;
+      const opLabel = getOperationLabel(step.operationType);
+      text += `Step ${idx + 1}: ${opLabel}\n`;
+      if (step.summary) {
+        text += `  ${step.summary}\n`;
+      }
+      text += `  Resulting bar: ${snap.bar.describe()}\n\n`;
+    });
+
+    text += "Final bar state:\n";
+    text += `  ${finalState.describe()}\n`;
+
+    outputEl.textContent = text;
   });
 }
 
