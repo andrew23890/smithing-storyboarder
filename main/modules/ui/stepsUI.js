@@ -17,6 +17,8 @@
 //   each step has at least:
 //     id, operationType, label, params, massChangeType,
 //     volumeDelta, suggestedVolumeDelta, summary, forgeNote
+//     + Phase 5 fields:
+//     resultingVolume, conservationStatus, conservationIssue
 // - appState.volumeSummary: {
 //     startingVolume, targetVolume,
 //     removedVolume, addedVolume,
@@ -97,6 +99,28 @@ function buildParamLines(params = {}) {
   return lines;
 }
 
+/**
+ * Compute a simple icon + label for a step's conservation status.
+ * Uses Phase 5 fields: step.conservationStatus, step.conservationIssue.
+ */
+function getConservationBadge(step) {
+  if (!step) {
+    return { icon: "❔", label: "no volume data" };
+  }
+
+  const status = step.conservationStatus || "unknown";
+
+  switch (status) {
+    case "ok":
+      return { icon: "✅", label: "volume ok" };
+    case "warning":
+      return { icon: "⚠️", label: "check volume" };
+    case "unknown":
+    default:
+      return { icon: "❔", label: "no volume data" };
+  }
+}
+
 /* -------------------------------------------------------------------------
  * Steps list rendering
  * ---------------------------------------------------------------------- */
@@ -144,7 +168,10 @@ export function renderStepsList(appState, listEl, options = {}) {
 
     // Header: Step N + label
     const header = document.createElement("div");
-    const opLabel = getOperationLabel(step.operationType) || step.label || "Forge step";
+    const opLabel =
+      getOperationLabel(step.operationType) ||
+      step.label ||
+      "Forge step";
     header.innerHTML = `<strong>Step ${index + 1}: ${opLabel}</strong>`;
     mainDiv.appendChild(header);
 
@@ -208,7 +235,7 @@ export function renderStepsList(appState, listEl, options = {}) {
       metaBits.push(`Mass: ${step.massChangeType}`);
     }
 
-    // Volume information
+    // Volume information for this step (input/heuristic)
     const vol = Number(step.volumeDelta);
     const suggested = Number(step.suggestedVolumeDelta);
 
@@ -234,10 +261,33 @@ export function renderStepsList(appState, listEl, options = {}) {
       metaBits.push(`heuristic: ~${formatVolume(suggested)}`);
     }
 
+    // Phase 5: resulting volume after this step
+    if (step.resultingVolume != null) {
+      metaBits.push(
+        `vol after step: ${formatVolume(step.resultingVolume)}`
+      );
+    }
+
+    // Phase 5: conservation badge
+    const badge = getConservationBadge(step);
+    metaBits.push(`${badge.icon} ${badge.label}`);
+
     if (metaBits.length) {
       const metaText = document.createElement("div");
       metaText.textContent = metaBits.join(" · ");
       metaDiv.appendChild(metaText);
+    }
+
+    // If this step has a specific conservation issue, show a small note
+    if (
+      step.conservationStatus === "warning" &&
+      typeof step.conservationIssue === "string" &&
+      step.conservationIssue.trim()
+    ) {
+      const issueEl = document.createElement("div");
+      issueEl.className = "steps-list-conservation-issue";
+      issueEl.textContent = step.conservationIssue.trim();
+      metaDiv.appendChild(issueEl);
     }
 
     // Optional delete button (hooked up only if onDeleteStep is provided)
@@ -294,6 +344,7 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     removedVolume,
     addedVolume,
     predictedFinalVolume,
+    netVolume,
     volumeWarnings,
   } = vs;
 
@@ -320,8 +371,18 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
   // Predicted final volume
   if (Number.isFinite(predictedFinalVolume)) {
     lines.push(
-      `Predicted final stock volume (start − removed + added): ${formatVolume(
+      `Predicted final stock volume (evolved with steps): ${formatVolume(
         predictedFinalVolume
+      )} (units³)`
+    );
+  }
+
+  // Net change (if available)
+  if (Number.isFinite(netVolume)) {
+    const sign = netVolume >= 0 ? "+" : "−";
+    lines.push(
+      `Net change relative to starting stock: ${sign}${formatVolume(
+        Math.abs(netVolume)
       )} (units³)`
     );
   }
@@ -338,7 +399,10 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     volumeWarnings.forEach((w) => {
       lines.push(`⚠️ ${w}`);
     });
-  } else if (Number.isFinite(startingVolume) && Number.isFinite(predictedFinalVolume)) {
+  } else if (
+    Number.isFinite(startingVolume) &&
+    Number.isFinite(predictedFinalVolume)
+  ) {
     lines.push("");
     lines.push(
       "✅ Volume budget looks physically plausible based on current heuristic estimates."
