@@ -55,6 +55,8 @@ import {
   describeHeuristicPreview,
 } from "./modules/heuristicPreview.js";
 
+import { getDefaultParams } from "./modules/operationLogic.js";
+
 /* ----------------- HELLO BUTTON ----------------- */
 
 function setupHelloButton() {
@@ -868,7 +870,9 @@ function setupStepsUI() {
   }
 
   function buildParamsForCurrentOperation(operationType) {
-    const params = {};
+    // Start from canonical default param shape so keys stay in sync
+    const baseTemplate = getDefaultParams(operationType) || {};
+    const params = { ...baseTemplate };
 
     // Always record units for volume bookkeeping context
     const units = unitsSelect.value || "in";
