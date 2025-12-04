@@ -1017,10 +1017,41 @@ function setupGeometrySimulationUI() {
     const preview = buildHeuristicPreviewFromAppState(appState);
     const previewText = describeHeuristicPreview(preview);
 
+    // ---- Phase 6 helper: append constraints / feasibility summary ----
+    function appendFeasibilitySection(text) {
+      const pf = appState.planFeasibility;
+      if (!pf) return text;
+
+      text += "\n\n=== Constraints / Feasibility Summary ===\n";
+
+      if (pf.status === "implausible") {
+        text += "❌ Overall plan judged implausible.\n";
+      } else if (pf.status === "aggressive") {
+        text += "⚠️ Plan is physically aggressive in places.\n";
+      } else if (pf.status === "ok") {
+        text += "✅ Plan appears physically plausible.\n";
+      } else {
+        text += "Feasibility unknown.\n";
+      }
+
+      if (Array.isArray(pf.messages) && pf.messages.length) {
+        pf.messages.forEach((msg) => {
+          if (typeof msg === "string" && msg.trim()) {
+            text += `• ${msg.trim()}\n`;
+          }
+        });
+      }
+
+      return text;
+    }
+
     // 3) Build geometry narration if we have steps
     if (!appState.lastGeometryRun || !appState.steps || !appState.steps.length) {
-      // No steps or no geometry snapshots – show preview only
-      outputEl.textContent = previewText;
+      // No steps or no geometry snapshots – show preview only,
+      // plus plan feasibility information (Phase 6).
+      let text = previewText;
+      text = appendFeasibilitySection(text);
+      outputEl.textContent = text;
       return;
     }
 
@@ -1046,6 +1077,9 @@ function setupGeometrySimulationUI() {
 
     text += "Final bar state:\n";
     text += `  ${finalState.describe()}\n`;
+
+    // --- Phase 6: append feasibility at the end of the full narrative ---
+    text = appendFeasibilitySection(text);
 
     outputEl.textContent = text;
   });

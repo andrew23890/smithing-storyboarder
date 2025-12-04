@@ -19,6 +19,8 @@
 //     volumeDelta, suggestedVolumeDelta, summary, forgeNote
 //     + Phase 5 fields:
 //     resultingVolume, conservationStatus, conservationIssue
+//     + Phase 6 fields:
+//     constraintWarnings, constraintErrors, feasibilityStatus
 // - appState.volumeSummary: {
 //     startingVolume, targetVolume,
 //     removedVolume, addedVolume,
@@ -33,11 +35,14 @@ import { getOperationLabel } from "../operations.js";
  * ---------------------------------------------------------------------- */
 
 /**
- * Defensive formatter for volume numbers.
+ * Format a numeric volume safely for display.
+ * Returns "—" for NaN/null/undefined.
  */
 function formatVolume(value) {
+  if (value === null || value === undefined) return "—";
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return "0.000";
+  if (!Number.isFinite(n)) return "—";
+  if (Math.abs(n) < 1e-6) return "0.000";
   return n.toFixed(3);
 }
 
@@ -68,8 +73,8 @@ function extractUserDescription(step) {
 }
 
 /**
- * Build a list of human-readable parameter lines from the step params.
- * We hide some internal keys that aren’t user-facing.
+ * Build a list of "key: value" lines for non-description params to show in UI.
+ * This is intentionally light-touch; it just surfaces interesting parameters.
  */
 function buildParamLines(params = {}) {
   const lines = [];
@@ -121,6 +126,29 @@ function getConservationBadge(step) {
   }
 }
 
+/**
+ * Compute icon + label for a step's Phase 6 feasibility status.
+ * Uses step.feasibilityStatus and constraint warnings/errors.
+ */
+function getFeasibilityBadge(step) {
+  if (!step) {
+    return { icon: "❔", label: "feasibility unknown" };
+  }
+
+  const status = step.feasibilityStatus || "unknown";
+
+  switch (status) {
+    case "implausible":
+      return { icon: "⛔", label: "implausible" };
+    case "aggressive":
+      return { icon: "⚠️", label: "aggressive" };
+    case "ok":
+      return { icon: "✅", label: "feasible" };
+    default:
+      return { icon: "❔", label: "feasibility unknown" };
+  }
+}
+
 /* -------------------------------------------------------------------------
  * Steps list rendering
  * ---------------------------------------------------------------------- */
@@ -162,37 +190,51 @@ export function renderStepsList(appState, listEl, options = {}) {
     const row = document.createElement("div");
     row.className = "steps-list-item";
 
-    // Main column (left)
     const mainDiv = document.createElement("div");
     mainDiv.className = "steps-list-item-main";
 
-    // Header: Step N + label
+    const metaDiv = document.createElement("div");
+    metaDiv.className = "steps-list-item-meta";
+
+    // Header line: "Step N – Operation label"
     const header = document.createElement("div");
-    const opLabel =
-      getOperationLabel(step.operationType) ||
+    header.className = "steps-list-header";
+
+    const stepNum = document.createElement("span");
+    stepNum.className = "steps-list-step-number";
+    stepNum.textContent = `Step ${index + 1}`;
+
+    const label = document.createElement("span");
+    label.className = "steps-list-step-label";
+    const labelText =
       step.label ||
-      "Forge step";
-    header.innerHTML = `<strong>Step ${index + 1}: ${opLabel}</strong>`;
+      (typeof step.operationType === "string"
+        ? getOperationLabel(step.operationType) || step.operationType
+        : "Step");
+    label.textContent = ` – ${labelText}`;
+
+    header.appendChild(stepNum);
+    header.appendChild(label);
     mainDiv.appendChild(header);
 
-    // Auto summary (from ForgeStep.summary, if present)
-    if (step.summary) {
-      const summaryEl = document.createElement("div");
-      summaryEl.className = "steps-list-summary";
-      summaryEl.textContent = step.summary;
-      mainDiv.appendChild(summaryEl);
+    // Summary line (computed by the model)
+    if (typeof step.summary === "string" && step.summary.trim()) {
+      const summary = document.createElement("div");
+      summary.className = "steps-list-summary";
+      summary.textContent = step.summary.trim();
+      mainDiv.appendChild(summary);
     }
 
-    // User description (plain-language notes)
+    // User description, if provided
     const userDesc = extractUserDescription(step);
     if (userDesc) {
-      const descEl = document.createElement("div");
-      descEl.className = "steps-list-description";
-      descEl.textContent = userDesc;
-      mainDiv.appendChild(descEl);
+      const desc = document.createElement("div");
+      desc.className = "steps-list-description";
+      desc.textContent = userDesc;
+      mainDiv.appendChild(desc);
     }
 
-    // Parameter details (generic key/value list)
+    // Parameter lines
     const paramLines = buildParamLines(step.params || {});
     if (paramLines.length) {
       const paramsBlock = document.createElement("div");
@@ -224,20 +266,26 @@ export function renderStepsList(appState, listEl, options = {}) {
       mainDiv.appendChild(noteEl);
     }
 
-    // Meta column (right)
-    const metaDiv = document.createElement("div");
-    metaDiv.className = "steps-list-item-meta";
-
+    // Meta information on the right (mass behavior, ΔV, volume after step, badges)
     const metaBits = [];
 
-    // Mass behavior line
-    if (step.massChangeType) {
-      metaBits.push(`Mass: ${step.massChangeType}`);
+    // Mass behavior
+    const massType = step.massChangeType || "conserved";
+    if (massType === "removed") {
+      metaBits.push("mass removed");
+    } else if (massType === "added") {
+      metaBits.push("mass added");
+    } else {
+      metaBits.push("mass conserved");
     }
 
-    // Volume information for this step (input/heuristic)
-    const vol = Number(step.volumeDelta);
-    const suggested = Number(step.suggestedVolumeDelta);
+    // Volume delta / heuristic
+    const vol = Number.isFinite(Number(step.volumeDelta))
+      ? Number(step.volumeDelta)
+      : null;
+    const suggested = Number.isFinite(Number(step.suggestedVolumeDelta))
+      ? Number(step.suggestedVolumeDelta)
+      : null;
 
     if (Number.isFinite(vol) && vol > 0) {
       const action =
@@ -272,6 +320,10 @@ export function renderStepsList(appState, listEl, options = {}) {
     const badge = getConservationBadge(step);
     metaBits.push(`${badge.icon} ${badge.label}`);
 
+    // Phase 6: feasibility badge
+    const feasBadge = getFeasibilityBadge(step);
+    metaBits.push(`${feasBadge.icon} ${feasBadge.label}`);
+
     if (metaBits.length) {
       const metaText = document.createElement("div");
       metaText.textContent = metaBits.join(" · ");
@@ -290,6 +342,28 @@ export function renderStepsList(appState, listEl, options = {}) {
       metaDiv.appendChild(issueEl);
     }
 
+    // Phase 6: constraint warnings/errors (feasibility notes)
+    const constraintMessages = [];
+    if (Array.isArray(step.constraintErrors) && step.constraintErrors.length) {
+      constraintMessages.push(`⛔ ${step.constraintErrors[0]}`);
+    }
+    if (Array.isArray(step.constraintWarnings) && step.constraintWarnings.length) {
+      const firstWarning = step.constraintWarnings[0];
+      if (
+        !constraintMessages.length ||
+        constraintMessages[0].indexOf(firstWarning) === -1
+      ) {
+        constraintMessages.push(`⚠️ ${firstWarning}`);
+      }
+    }
+
+    if (constraintMessages.length) {
+      const constraintEl = document.createElement("div");
+      constraintEl.className = "steps-list-constraint-issue";
+      constraintEl.textContent = constraintMessages.join(" ");
+      metaDiv.appendChild(constraintEl);
+    }
+
     // Optional delete button (hooked up only if onDeleteStep is provided)
     if (typeof onDeleteStep === "function") {
       const deleteBtn = document.createElement("button");
@@ -304,24 +378,19 @@ export function renderStepsList(appState, listEl, options = {}) {
 
     row.appendChild(mainDiv);
     row.appendChild(metaDiv);
-
-    if (step.id) {
-      row.dataset.stepId = step.id;
-    }
-
     listEl.appendChild(row);
   });
 }
 
 /* -------------------------------------------------------------------------
- * Volume summary rendering (Phase 5)
+ * Steps volume summary rendering
  * ---------------------------------------------------------------------- */
 
 /**
- * Render the volume budget summary using the current appState.volumeSummary.
+ * Render the volume budget summary + high-level warnings.
  *
- * @param {object} appState - Global state with volumeSummary.
- * @param {HTMLElement|null} summaryEl - Element (id="steps-volume-summary").
+ * @param {object} appState - global state (must have .volumeSummary).
+ * @param {HTMLElement|null} summaryEl - Container (id="steps-volume-summary").
  */
 export function renderStepsVolumeSummary(appState, summaryEl) {
   if (!summaryEl) {
@@ -343,8 +412,8 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     targetVolume,
     removedVolume,
     addedVolume,
-    predictedFinalVolume,
     netVolume,
+    predictedFinalVolume,
     volumeWarnings,
   } = vs;
 
@@ -409,6 +478,31 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     );
   }
 
+  // Phase 6: overall plan feasibility (constraints engine)
+  const pf = appState && appState.planFeasibility;
+  if (pf && pf.status && pf.status !== "unknown") {
+    lines.push("");
+    let statusLine = "Constraints engine: ";
+    if (pf.status === "implausible") {
+      statusLine += "❌ some steps look implausible.";
+    } else if (pf.status === "aggressive") {
+      statusLine += "⚠️ plan looks aggressive in places.";
+    } else if (pf.status === "ok") {
+      statusLine += "✅ plan looks physically plausible.";
+    } else {
+      statusLine += "feasibility unknown.";
+    }
+    lines.push(statusLine);
+
+    if (Array.isArray(pf.messages) && pf.messages.length) {
+      pf.messages.forEach((msg) => {
+        if (typeof msg === "string" && msg.trim()) {
+          lines.push(`• ${msg.trim()}`);
+        }
+      });
+    }
+  }
+
   summaryEl.textContent = lines.join("\n");
 }
 
@@ -431,14 +525,14 @@ export function renderStepsPanel(appState, listEl, summaryEl, options = {}) {
 }
 
 /**
- * Show a card-level error for the Steps card.
+ * Show a card-level error message for the Steps card.
  *
+ * @param {HTMLElement|null} errorEl
  * @param {string} message
- * @param {HTMLElement|null} errorEl - Element (id="steps-error").
  */
-export function showStepsError(message, errorEl) {
+export function showStepsError(errorEl, message) {
   if (!errorEl) {
-    console.warn("[stepsUI] showStepsError called without errorEl.");
+    console.error("[stepsUI] showStepsError called without errorEl.");
     return;
   }
   errorEl.textContent = message || "";
