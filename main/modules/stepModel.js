@@ -1,12 +1,14 @@
 // main/modules/stepModel.js
 //
-// Data model for forge steps (Roadmap Phase 5).
+// Data model for forge steps (Roadmap Phase 5 + Phase 6).
 //
 // Responsibilities:
 // - Represent a single forge step (ForgeStep)
 // - Attach human-friendly labels + summaries
 // - Track mass-change classification + volume delta
 // - Store a resulting stock snapshot + volume per step
+// - Store volume-conservation checks per step
+// - Store physical-feasibility / constraint checks per step (Phase 6)
 // - Provide a summary helper for the entire step list
 //
 // Heuristic-specific logic (volume estimates, notes, etc.) lives in
@@ -29,8 +31,7 @@ let STEP_ID_COUNTER = 1;
  * ---------------------------------------------------------------------- */
 
 /**
- * Normalize a raw numeric value (possibly string) into a finite number,
- * or null if not usable.
+ * Normalize a raw numeric value into a finite number or null.
  */
 function toNumberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -55,9 +56,9 @@ function extractLocationHint(params = {}) {
 
   for (const key of keys) {
     const val = params[key];
-    if (typeof val === "string" && val.trim()) {
-      return val.trim();
-    }
+    if (val === undefined || val === null) continue;
+    const s = String(val).trim();
+    if (s) return s;
   }
 
   return "";
@@ -99,7 +100,7 @@ function buildStepSummary(step) {
   // Operation-specific hints
   switch (step.operationType) {
     case "draw_out":
-      if (length) pieces.push(`over ~${length} units of length`);
+      if (length) pieces.push(`drawing out ~${length} units of bar`);
       break;
 
     case "taper":
@@ -212,19 +213,25 @@ export class ForgeStep {
       fallbackMassType ||
       "conserved";
 
+    // Suggested volume change from heuristic (may be null)
     this.suggestedVolumeDelta =
-      (heuristic && heuristic.suggestedVolumeDelta) || 0;
+      heuristic && typeof heuristic.suggestedVolumeDelta === "number"
+        ? heuristic.suggestedVolumeDelta
+        : null;
 
-    // User override for volume is stored in params.volumeDelta or
-    // params.volumeDeltaOverride. If not provided, we use the heuristic.
-    const rawVolumeOverride =
-      this.params.volumeDeltaOverride ?? this.params.volumeDelta;
-    const normalizedOverride = toNumberOrNull(rawVolumeOverride);
+    // Explicit override from params (if UI provided one)
+    const normalizedOverride = toNumberOrNull(
+      this.params.volumeDeltaOverride ?? this.params.volumeDelta
+    );
 
     this.volumeDelta =
       normalizedOverride !== null && normalizedOverride >= 0
         ? normalizedOverride
         : this.suggestedVolumeDelta;
+
+    if (!Number.isFinite(this.volumeDelta)) {
+      this.volumeDelta = null;
+    }
 
     // Human-friendly notes / description hint.
     this.forgeNote = getOperationNotes
@@ -240,6 +247,12 @@ export class ForgeStep {
     this.resultingVolume = null; // numeric volume (same units³ as stock)
     this.conservationStatus = null; // "ok" | "warning" | "unknown" | null
     this.conservationIssue = null; // short text description if warning
+
+    // Phase 6: constraint / feasibility feedback for this step.
+    // These are advisory only; they do NOT block the user.
+    this.constraintWarnings = []; // array of short strings
+    this.constraintErrors = [];   // array of short strings
+    this.feasibilityStatus = null; // "ok" | "aggressive" | "implausible" | null
 
     // Cached summary (can be recomputed by calling buildStepSummary(this)).
     this.summary = buildStepSummary(this);
@@ -283,6 +296,9 @@ export class ForgeStep {
     if (volume != null) {
       const v = Number(volume);
       this.resultingVolume = Number.isFinite(v) ? v : null;
+    } else if (typeof stock.volume === "number") {
+      const v = Number(stock.volume);
+      this.resultingVolume = Number.isFinite(v) ? v : null;
     } else if (typeof stock.computeVolume === "function") {
       try {
         const v = Number(stock.computeVolume());
@@ -306,6 +322,43 @@ export class ForgeStep {
   }
 
   /**
+   * Phase 6: store constraint / feasibility feedback.
+   *
+   * These results typically come from constraintsEngine.validateStep().
+   *
+   * @param {{warnings?: string[], errors?: string[], feasibilityStatus?: ("ok"|"aggressive"|"implausible"|null)}} result
+   */
+  setConstraintResult(result = {}) {
+    const { warnings, errors, feasibilityStatus } = result;
+
+    this.constraintWarnings = Array.isArray(warnings) ? [...warnings] : [];
+    this.constraintErrors = Array.isArray(errors) ? [...errors] : [];
+
+    const fs = feasibilityStatus || null;
+    this.feasibilityStatus =
+      fs === "ok" || fs === "aggressive" || fs === "implausible" ? fs : null;
+  }
+
+  /**
+   * Build a short human-readable summary string for constraint feedback.
+   * This is optional sugar for the UI to present constraint results.
+   *
+   * @returns {string|null}
+   */
+  getConstraintSummary() {
+    const errs = this.constraintErrors || [];
+    const warns = this.constraintWarnings || [];
+
+    if (errs.length > 0) {
+      return errs[0];
+    }
+    if (warns.length > 0) {
+      return warns[0];
+    }
+    return null;
+  }
+
+  /**
    * Convert to a plain JSON-serializable object.
    * Useful for localStorage or exporting plans.
    */
@@ -325,6 +378,10 @@ export class ForgeStep {
       resultingVolume: this.resultingVolume,
       conservationStatus: this.conservationStatus,
       conservationIssue: this.conservationIssue,
+      // Phase 6 additions:
+      constraintWarnings: this.constraintWarnings,
+      constraintErrors: this.constraintErrors,
+      feasibilityStatus: this.feasibilityStatus,
     };
   }
 
@@ -365,13 +422,14 @@ export class ForgeStep {
 
     // Phase 5: rehydrate snapshot & conservation fields if present.
     if (data.resultingStockSnapshot) {
+      const snapshot = data.resultingStockSnapshot;
       step.resultingStockSnapshot = {
-        material: data.resultingStockSnapshot.material ?? "steel",
-        shape: data.resultingStockSnapshot.shape ?? "square",
-        dimA: data.resultingStockSnapshot.dimA ?? null,
-        dimB: data.resultingStockSnapshot.dimB ?? null,
-        length: data.resultingStockSnapshot.length ?? null,
-        units: data.resultingStockSnapshot.units ?? "units",
+        material: snapshot.material ?? "steel",
+        shape: snapshot.shape ?? "square",
+        dimA: snapshot.dimA ?? null,
+        dimB: snapshot.dimB ?? null,
+        length: snapshot.length ?? null,
+        units: snapshot.units ?? "units",
       };
     }
 
@@ -383,6 +441,20 @@ export class ForgeStep {
     }
     if (typeof data.conservationIssue === "string") {
       step.conservationIssue = data.conservationIssue;
+    }
+
+    // Phase 6: rehydrate constraint fields if present.
+    if (Array.isArray(data.constraintWarnings)) {
+      step.constraintWarnings = [...data.constraintWarnings];
+    }
+    if (Array.isArray(data.constraintErrors)) {
+      step.constraintErrors = [...data.constraintErrors];
+    }
+    if (typeof data.feasibilityStatus === "string") {
+      const fs = data.feasibilityStatus;
+      if (fs === "ok" || fs === "aggressive" || fs === "implausible") {
+        step.feasibilityStatus = fs;
+      }
     }
 
     return step;
