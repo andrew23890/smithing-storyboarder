@@ -35,20 +35,20 @@ import {
   clearStockMessages,
   setStockFieldError,
   clearStockFieldErrors,
-} from "./modules/stockUI.js";
+} from "./modules/ui/stockUI.js";
 
 import {
   renderTargetSummary,
   renderTargetComparison,
   showTargetError,
   clearTargetError,
-} from "./modules/targetUI.js";
+} from "./modules/ui/targetUI.js";
 
 import {
   renderStepsPanel,
   showStepsError,
   clearStepsError,
-} from "./modules/stepsUI.js";
+} from "./modules/ui/stepsUI.js";
 
 import {
   buildHeuristicPreviewFromAppState,
@@ -775,7 +775,7 @@ function setupStepsUI() {
       length: {
         label: "Slit length",
         placeholder: "e.g. 1.25",
-        key: "slitLength",
+        key: "slightLength",
         numeric: true,
       },
       location: {
