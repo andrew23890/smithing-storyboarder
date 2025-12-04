@@ -1,6 +1,6 @@
 // main/main.js
 // Entry point for the Smithing Storyboarder app.
-// Phase 5: central app state + UI helper modules + heuristic preview.
+// Phases 0–7: starting stock, target shape, steps, geometry, and storyboard previews.
 
 import { forgeGreeting } from "./modules/hello.js";
 import { Stock } from "./modules/stockModel.js";
@@ -35,20 +35,20 @@ import {
   clearStockMessages,
   setStockFieldError,
   clearStockFieldErrors,
-} from "./modules/ui/stockUI.js";
+} from "./modules/stockUI.js";
 
 import {
   renderTargetSummary,
   renderTargetComparison,
   showTargetError,
   clearTargetError,
-} from "./modules/ui/targetUI.js";
+} from "./modules/targetUI.js";
 
 import {
   renderStepsPanel,
   showStepsError,
   clearStepsError,
-} from "./modules/ui/stepsUI.js";
+} from "./modules/stepsUI.js";
 
 import {
   buildHeuristicPreviewFromAppState,
@@ -56,12 +56,15 @@ import {
 } from "./modules/heuristicPreview.js";
 
 import { getDefaultParams } from "./modules/operationLogic.js";
+
 import {
   buildBarDrawingModelFromStockSnapshot,
   createBeforeAfterOverlaySvg,
 } from "./modules/drawingEngine.js";
 
-/* ----------------- HELLO BUTTON ----------------- */
+/* -------------------------------------------------------------------------- */
+/* HELLO BUTTON                                                               */
+/* -------------------------------------------------------------------------- */
 
 function setupHelloButton() {
   const button = document.getElementById("hello-button");
@@ -79,27 +82,25 @@ function setupHelloButton() {
   });
 }
 
-/* ----------------- STOCK UI REFRESH ----------------- */
+/* -------------------------------------------------------------------------- */
+/* SHARED REFRESH HELPERS                                                     */
+/* -------------------------------------------------------------------------- */
 
 function refreshStockUI() {
   const summaryEl = document.getElementById("stock-summary");
   if (!summaryEl) {
-    console.error("[Stock] Missing stock-summary element.");
+    console.error("[Stock] Missing #stock-summary element.");
     return;
   }
   renderStockSummary(appState, summaryEl);
 }
-
-/* ----------------- TARGET UI REFRESH ----------------- */
 
 function refreshTargetUI() {
   const summaryEl = document.getElementById("target-summary");
   const compareEl = document.getElementById("target-compare");
 
   if (!summaryEl || !compareEl) {
-    console.error(
-      "[Target] Missing target-summary or target-compare element."
-    );
+    console.error("[Target] Missing target summary/compare elements.");
     return;
   }
 
@@ -107,15 +108,12 @@ function refreshTargetUI() {
   renderTargetComparison(appState, compareEl);
 }
 
-/* ----------------- STEPS UI REFRESH ----------------- */
-
 function refreshStepsUI() {
   const listEl = document.getElementById("steps-list");
   const summaryEl = document.getElementById("steps-volume-summary");
+
   if (!listEl || !summaryEl) {
-    console.error(
-      "[Steps] Missing steps-list or steps-volume-summary element."
-    );
+    console.error("[Steps] Missing steps list or volume summary element.");
     return;
   }
 
@@ -128,6 +126,10 @@ function refreshStepsUI() {
     },
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* STEP PREVIEW PANEL (BEFORE/AFTER OVERLAY)                                  */
+/* -------------------------------------------------------------------------- */
 
 function updateStepPreviewPanelForStep(stepIndex) {
   const panel = document.getElementById("step-preview-panel");
@@ -151,6 +153,8 @@ function updateStepPreviewPanelForStep(stepIndex) {
     return;
   }
 
+  // Remember: stepStockStates[0] = starting stock (before any steps),
+  // stepStockStates[i] = after step i.
   const beforeSnapshot =
     stepIndex >= 0 && stepIndex < states.length ? states[stepIndex] : null;
   const afterSnapshot =
@@ -183,7 +187,7 @@ function updateStepPreviewPanelForStep(stepIndex) {
       });
     }
   } catch (err) {
-    console.warn("[Steps] Failed to build models for step preview:", err);
+    console.warn("[StepPreview] Failed to build models:", err);
   }
 
   let svg = null;
@@ -194,7 +198,7 @@ function updateStepPreviewPanelForStep(stepIndex) {
       title: `Before/after outline for step ${stepIndex + 1}`,
     });
   } catch (err) {
-    console.warn("[Steps] Failed to create before/after SVG:", err);
+    console.warn("[StepPreview] Failed to create overlay SVG:", err);
   }
 
   if (!svg) {
@@ -212,23 +216,25 @@ function updateStepPreviewPanelForStep(stepIndex) {
   panel.appendChild(svg);
 }
 
-/* ----------------- STARTING STOCK FORM ----------------- */
+/* -------------------------------------------------------------------------- */
+/* STARTING STOCK FORM                                                        */
+/* -------------------------------------------------------------------------- */
 
 function setupStockForm() {
   console.log("[StockForm] Setting up stock form…");
 
-  // IDs aligned with index.html
   const materialSelect = document.getElementById("material");
   const shapeSelect = document.getElementById("stock-shape");
   const dimAInput = document.getElementById("dim-a");
   const dimBInput = document.getElementById("dim-b");
   const dimBField = document.getElementById("dim-b-wrapper");
-  const dimALabel = document.querySelector('label[for="dim-a"]');
-  const dimBLabel = document.querySelector('label[for="dim-b"]');
   const lengthInput = document.getElementById("length");
   const unitsSelect = document.getElementById("stock-units");
   const setButton = document.getElementById("stock-set-btn");
-  const stockErrorEl = document.getElementById("stock-error");
+  const errorEl = document.getElementById("stock-error");
+
+  const dimALabel = document.querySelector('label[for="dim-a"]');
+  const dimBLabel = document.querySelector('label[for="dim-b"]');
 
   if (
     !materialSelect ||
@@ -238,22 +244,18 @@ function setupStockForm() {
     !unitsSelect ||
     !setButton
   ) {
-    console.error(
-      "[StockForm] Missing one or more stock form elements in DOM."
-    );
+    console.error("[StockForm] Missing one or more stock form elements.");
     return;
   }
 
   function parsePositiveNumber(value) {
-    if (value === null || value === undefined) return NaN;
+    if (value === null || value === undefined || value === "") return NaN;
     const num = Number(value);
-    if (!Number.isFinite(num)) return NaN;
-    if (num <= 0) return NaN;
+    if (!Number.isFinite(num) || num <= 0) return NaN;
     return num;
   }
 
-  // Toggle visibility / labels for Dim B when shape changes
-  function updateDimLabelsAndVisibility() {
+  function updateDimensionLabels() {
     const shape = shapeSelect.value;
     if (!dimALabel || !dimBLabel) return;
 
@@ -261,117 +263,124 @@ function setupStockForm() {
       case "round":
         dimALabel.textContent = "Diameter";
         dimBLabel.textContent = "Secondary dimension (unused)";
-        if (dimBField) {
-          dimBField.style.display = "none";
-        }
+        if (dimBField) dimBField.style.display = "none";
         break;
       case "square":
         dimALabel.textContent = "Side (square)";
         dimBLabel.textContent = "Secondary dimension (unused)";
-        if (dimBField) {
-          dimBField.style.display = "none";
-        }
+        if (dimBField) dimBField.style.display = "none";
         break;
       case "flat":
       case "rectangle":
         dimALabel.textContent = "Width (a)";
-        dimBLabel.textContent = "Height / thickness (b)";
-        if (dimBField) {
-          dimBField.style.display = "";
-        }
+        dimBLabel.textContent = "Thickness (b)";
+        if (dimBField) dimBField.style.display = "";
         break;
       default:
         dimALabel.textContent = "Primary dimension";
         dimBLabel.textContent = "Secondary dimension";
-        if (dimBField) {
-          dimBField.style.display = "";
-        }
+        if (dimBField) dimBField.style.display = "";
         break;
     }
   }
 
   shapeSelect.addEventListener("change", () => {
-    updateDimLabelsAndVisibility();
+    updateDimensionLabels();
     clearStockFieldErrors();
-    clearStockError(stockErrorEl);
+    clearStockError(errorEl);
   });
 
-  updateDimLabelsAndVisibility();
+  updateDimensionLabels();
 
   setButton.addEventListener("click", (evt) => {
     evt.preventDefault();
     clearStockMessages();
     clearStockFieldErrors();
-    clearStockError(stockErrorEl);
+    clearStockError(errorEl);
 
-    const shape = shapeSelect.value;
     const material = materialSelect.value;
+    const shape = shapeSelect.value;
     const units = unitsSelect.value;
 
     let hasError = false;
 
-    // Validate material
+    // Material
     if (!material) {
-      setStockFieldError("material-error", "Please choose a material.");
-      hasError = true;
-    }
-
-    // Validate shape
-    if (!shape) {
-      setStockFieldError("stock-shape-error", "Please choose a stock shape.");
-      hasError = true;
-    }
-
-    // Validate Dim A
-    const dimANum = parsePositiveNumber(dimAInput.value);
-    if (Number.isNaN(dimANum)) {
       setStockFieldError(
-        "dim-a-error",
-        "Dim A must be a positive number greater than 0."
+        materialSelect,
+        "stock-material-error",
+        "Please choose a material."
       );
       hasError = true;
     }
 
-    // Validate Dim B only for flat/rectangle
+    // Shape
+    if (!shape) {
+      setStockFieldError(
+        shapeSelect,
+        "stock-shape-error",
+        "Please choose a basic stock shape."
+      );
+      hasError = true;
+    }
+
+    // Dim A
+    const dimANum = parsePositiveNumber(dimAInput.value);
+    if (Number.isNaN(dimANum)) {
+      setStockFieldError(
+        dimAInput,
+        "stock-dim-a-error",
+        "Primary dimension must be a positive number."
+      );
+      hasError = true;
+    }
+
+    // Dim B – only required for flat/rectangular
     let dimBNum = null;
     if (shape === "flat" || shape === "rectangle") {
       dimBNum = parsePositiveNumber(dimBInput.value);
       if (Number.isNaN(dimBNum)) {
         setStockFieldError(
-          "dim-b-error",
-          "Dim B must be a positive number greater than 0."
+          dimBInput,
+          "stock-dim-b-error",
+          "Secondary dimension must be a positive number."
         );
         hasError = true;
       }
     }
 
-    // Validate length
+    // Length
     const lengthNum = parsePositiveNumber(lengthInput.value);
     if (Number.isNaN(lengthNum)) {
       setStockFieldError(
+        lengthInput,
         "stock-length-error",
-        "Length must be a positive number greater than 0."
+        "Length must be a positive number."
       );
       hasError = true;
     }
 
-    // Validate units
+    // Units
     if (!units) {
-      setStockFieldError("stock-units-error", "Please choose units.");
+      setStockFieldError(
+        unitsSelect,
+        "stock-units-error",
+        "Please choose units for this stock."
+      );
       hasError = true;
     }
 
     if (hasError) {
       showStockError(
-        stockErrorEl,
-        "Please fix the highlighted fields before setting the starting stock."
+        "Please correct the highlighted fields before setting starting stock.",
+        errorEl
       );
       return;
     }
 
+    // For square stock, dimB = dimA
     let dimAForStock = dimANum;
     let dimBForStock = dimBNum;
-
     if (shape === "square") {
       dimBForStock = dimAForStock;
     }
@@ -393,18 +402,20 @@ function setupStockForm() {
       refreshStockUI();
       refreshTargetUI();
       refreshStepsUI();
-      clearStockError(stockErrorEl);
+      clearStockError(errorEl);
     } catch (err) {
       console.error("[StockForm] Error creating or setting Stock:", err);
       showStockError(
-        stockErrorEl,
-        "There was a problem creating the starting stock. Check your inputs."
+        "There was a problem creating the starting stock. Please check your inputs.",
+        errorEl
       );
     }
   });
 }
 
-/* ----------------- TARGET SHAPE (MANUAL) ----------------- */
+/* -------------------------------------------------------------------------- */
+/* TARGET SHAPE (MANUAL)                                                      */
+/* -------------------------------------------------------------------------- */
 
 function setupTargetShapeForm() {
   console.log("[Target] Setting up manual target shape form…");
@@ -418,53 +429,51 @@ function setupTargetShapeForm() {
 
   if (!labelInput || !volumeInput || !unitsSelect || !setButton) {
     console.error(
-      "[Target] Missing one or more manual target form elements in DOM."
+      "[Target] Missing one or more manual target shape form elements."
     );
     return;
   }
 
   function parseNonNegativeVolume(value) {
-    if (value === null || value === undefined || value === "") {
-      return null;
-    }
+    if (value === null || value === undefined || value === "") return null;
     const num = Number(value);
-    if (!Number.isFinite(num)) return NaN;
-    if (num < 0) return NaN;
+    if (!Number.isFinite(num) || num < 0) return NaN;
     return num;
   }
 
   setButton.addEventListener("click", (evt) => {
     evt.preventDefault();
     clearTargetError(errorEl);
+    if (errorEl) errorEl.textContent = "";
 
     const label = (labelInput.value || "").trim();
-    const units = unitsSelect.value;
-    const notes = (notesInput.value || "").trim();
     const rawVolume = volumeInput.value;
+    const units = unitsSelect.value || "in";
+    const notes = (notesInput && notesInput.value.trim()) || "";
 
     let hasError = false;
 
     if (!label) {
-      showTargetError(errorEl, "Please provide a name or label.");
+      showTargetError("Please provide a name or label for the target.", errorEl);
       hasError = true;
     }
 
     if (!units) {
-      showTargetError(errorEl, "Please select volume units.");
+      showTargetError("Please select volume units.", errorEl);
       hasError = true;
     }
 
     const parsedVolume = parseNonNegativeVolume(rawVolume);
     if (parsedVolume === null) {
       showTargetError(
-        errorEl,
-        "Please provide an approximate volume (0 or greater)."
+        "Please provide an approximate volume (0 or greater).",
+        errorEl
       );
       hasError = true;
     } else if (Number.isNaN(parsedVolume)) {
       showTargetError(
-        errorEl,
-        "Volume must be a number greater than or equal to 0."
+        "Volume must be a number greater than or equal to 0.",
+        errorEl
       );
       hasError = true;
     }
@@ -489,14 +498,16 @@ function setupTargetShapeForm() {
     } catch (err) {
       console.error("[Target] Error creating manual TargetShape:", err);
       showTargetError(
-        errorEl,
-        "There was a problem creating the target shape. Please check your inputs."
+        "There was a problem creating the target shape. Please check your inputs.",
+        errorEl
       );
     }
   });
 }
 
-/* ----------------- CAD / STL IMPORT (TARGET SHAPE) ----------------- */
+/* -------------------------------------------------------------------------- */
+/* CAD / STL IMPORT (TARGET SHAPE)                                            */
+/* -------------------------------------------------------------------------- */
 
 function setupCadImport() {
   console.log("[CAD] Setting up CAD/STL import…");
@@ -509,11 +520,12 @@ function setupCadImport() {
   const errorEl = document.getElementById("cad-error");
 
   if (!fileInput || !unitsSelect || !loadButton) {
-    console.error("[CAD] Missing one or more CAD import elements in DOM.");
+    console.error("[CAD] Missing one or more CAD import elements.");
     return;
   }
 
-  loadButton.addEventListener("click", async () => {
+  loadButton.addEventListener("click", async (evt) => {
+    evt.preventDefault();
     clearTargetError(errorEl);
     if (errorEl) errorEl.textContent = "";
 
@@ -551,9 +563,6 @@ function setupCadImport() {
         summaryEl.appendChild(p);
       }
 
-      const cadError = document.getElementById("cad-error");
-      if (cadError) cadError.textContent = "";
-
       const fileForPreview = fileInput.files && fileInput.files[0];
       if (fileForPreview) {
         startCadPreviewFromFile(fileForPreview);
@@ -570,12 +579,13 @@ function setupCadImport() {
   });
 }
 
-/* ----------------- STEPS FORM + VOLUME BUDGET (PHASE 5) ----------------- */
+/* -------------------------------------------------------------------------- */
+/* STEPS FORM + VOLUME BUDGET (PHASE 5–7)                                     */
+/* -------------------------------------------------------------------------- */
 
 function setupStepsUI() {
   console.log("[Steps] Setting up steps UI…");
 
-  // IDs aligned with index.html for the core controls
   const opSelect = document.getElementById("step-operation");
   const descInput = document.getElementById("step-description");
   const volumeDeltaInput = document.getElementById("step-delta-volume");
@@ -583,7 +593,6 @@ function setupStepsUI() {
   const addBtn = document.getElementById("step-add-btn");
   const errorEl = document.getElementById("steps-error");
 
-  // Optional extra fields for structured params
   const lengthInput = document.getElementById("steps-param-length");
   const locationInput = document.getElementById("steps-param-location");
   const volumeDeltaLabel = document.getElementById("steps-volume-delta-label");
@@ -597,12 +606,12 @@ function setupStepsUI() {
     !addBtn
   ) {
     console.error(
-      "[Steps] Missing one or more steps form elements (operation, description, volume delta, units, or add button)."
+      "[Steps] Missing one or more steps form elements (operation, description, volume delta, units, add button)."
     );
     return;
   }
 
-  // Populate operations dropdown from operations.js
+  // Populate operation dropdown
   opSelect.innerHTML = "";
   const defaultOption = document.createElement("option");
   defaultOption.value = "";
@@ -616,31 +625,23 @@ function setupStepsUI() {
     opSelect.appendChild(opt);
   });
 
-  // Ensure default selection is empty
   opSelect.value = "";
 
-  // Helper to parse volume delta as a possibly-null number
   function parseVolumeDelta(value) {
-    if (value === null || value === undefined || value === "") {
-      return null;
-    }
+    if (value === null || value === undefined || value === "") return null;
     const num = Number(value);
-    if (!Number.isFinite(num)) return NaN;
-    if (num < 0) return NaN;
+    if (!Number.isFinite(num) || num < 0) return NaN;
     return num;
   }
 
-  // Helper to parse numeric-ish param (length/location if numeric)
   function parseNonNegativeFloat(value) {
-    if (value === null || value === undefined || value === "") {
-      return null;
-    }
+    if (value === null || value === undefined || value === "") return null;
     const num = Number(value);
-    if (!Number.isFinite(num)) return NaN;
-    if (num < 0) return NaN;
+    if (!Number.isFinite(num) || num < 0) return NaN;
     return num;
   }
 
+  // Operation-specific param mapping
   const OP_PARAM_CONFIG = {
     [FORGE_OPERATION_TYPES.DRAW_OUT]: {
       length: {
@@ -891,29 +892,28 @@ function setupStepsUI() {
     const defaultLocationLabel = "Location on bar (optional)";
 
     if (!cfg) {
-      if (lengthLabelEl) lengthLabelEl.textContent = defaultLengthLabel;
-      if (locationLabelEl) locationLabelEl.textContent = defaultLocationLabel;
+      lengthLabelEl.textContent = defaultLengthLabel;
+      locationLabelEl.textContent = defaultLocationLabel;
       lengthInput.placeholder = 'e.g. 4" tip, 2" near eye';
       locationInput.placeholder = 'e.g. 3" from end, center section';
       lengthInput.dataset.paramKey = "length";
       lengthInput.dataset.numeric = "false";
       locationInput.dataset.paramKey = "location";
       locationInput.dataset.numeric = "false";
-      return;
+    } else {
+      lengthLabelEl.textContent = cfg.length.label || defaultLengthLabel;
+      lengthInput.placeholder =
+        cfg.length.placeholder || 'e.g. 4" tip, 2" near eye';
+      lengthInput.dataset.paramKey = cfg.length.key || "length";
+      lengthInput.dataset.numeric = cfg.length.numeric ? "true" : "false";
+
+      locationLabelEl.textContent =
+        cfg.location.label || defaultLocationLabel;
+      locationInput.placeholder =
+        cfg.location.placeholder || 'e.g. 3" from end, center section';
+      locationInput.dataset.paramKey = cfg.location.key || "location";
+      locationInput.dataset.numeric = cfg.location.numeric ? "true" : "false";
     }
-
-    lengthLabelEl.textContent = cfg.length.label || defaultLengthLabel;
-    lengthInput.placeholder =
-      cfg.length.placeholder || 'e.g. 4" tip, 2" near eye';
-    lengthInput.dataset.paramKey = cfg.length.key || "length";
-    lengthInput.dataset.numeric = cfg.length.numeric ? "true" : "false";
-
-    locationLabelEl.textContent =
-      cfg.location.label || defaultLocationLabel;
-    locationInput.placeholder =
-      cfg.location.placeholder || "e.g. 3\" from end, center section";
-    locationInput.dataset.paramKey = cfg.location.key || "location";
-    locationInput.dataset.numeric = cfg.location.numeric ? "true" : "false";
 
     const massType = getOperationMassChangeType(op);
     if (massType === "conserved") {
@@ -980,7 +980,7 @@ function setupStepsUI() {
 
     const op = opSelect.value;
     if (!op) {
-      showStepsError(errorEl, "Please choose an operation first.");
+      showStepsError(errorEl, "Please choose an operation for this step.");
       return;
     }
 
@@ -996,14 +996,17 @@ function setupStepsUI() {
 
     const params = buildParamsForStep(op);
 
+    // If user provided a volume override, store it in params so ForgeStep can use it.
+    if (parsedDelta !== null && !Number.isNaN(parsedDelta)) {
+      params.volumeDeltaOverride = parsedDelta;
+    }
+
     try {
-      const step = new ForgeStep({
-        operationType: op,
-        label: getOperationLabel(op),
-        params,
-        volumeDelta: parsedDelta,
-        units: unitsSelect.value || "in",
-      });
+      // Use positional constructor: ForgeStep(operationType, params, startingStockState?)
+      const startingStateForHeuristic =
+        appState.currentStockState || appState.startingStock || null;
+
+      const step = new ForgeStep(op, params, startingStateForHeuristic);
 
       addStep(step);
       refreshStepsUI();
@@ -1017,8 +1020,8 @@ function setupStepsUI() {
     } catch (err) {
       console.error("[Steps] Error creating step:", err);
       showStepsError(
-        "There was a problem creating this step. Please check your inputs.",
-        errorEl
+        errorEl,
+        "There was a problem creating this step. Please check your inputs."
       );
     }
   });
@@ -1036,26 +1039,30 @@ function setupStepsUI() {
   // Initial render
   refreshStepsUI();
 
-  // Wire click → step preview panel (before/after overlay)
+  // Click → update step preview panel
   const stepsListEl = document.getElementById("steps-list");
   if (stepsListEl) {
     stepsListEl.addEventListener("click", (evt) => {
-      if (evt.target && evt.target.closest(".steps-list-delete-button")) {
-        return;
-      }
+      const deleteBtn = evt.target.closest(".steps-list-delete-button");
+      if (deleteBtn) return;
+
       const item = evt.target.closest(".steps-list-item");
       if (!item) return;
+
       const items = Array.from(
         stepsListEl.querySelectorAll(".steps-list-item")
       );
       const index = items.indexOf(item);
       if (index === -1) return;
+
       updateStepPreviewPanelForStep(index);
     });
   }
 }
 
-/* ----------------- GEOMETRY SIMULATION + HEURISTIC PREVIEW ----------------- */
+/* -------------------------------------------------------------------------- */
+/* GEOMETRY SIMULATION + HEURISTIC PREVIEW                                    */
+/* -------------------------------------------------------------------------- */
 
 function setupGeometrySimulationUI() {
   console.log("[Geometry] Setting up geometry simulation UI…");
@@ -1071,17 +1078,17 @@ function setupGeometrySimulationUI() {
 
   button.addEventListener("click", () => {
     if (!appState.startingStock) {
-      if (errorEl)
+      if (errorEl) {
         errorEl.textContent =
           "Please define starting stock before running the geometry simulation.";
+      }
       return;
     }
 
-    clearStepsError(errorEl);
-    recomputeTimeline();
-
     if (errorEl) errorEl.textContent = "";
     outputEl.textContent = "";
+
+    recomputeTimeline();
 
     const snapshots =
       appState.lastGeometryRun && appState.lastGeometryRun.snapshots
@@ -1089,8 +1096,8 @@ function setupGeometrySimulationUI() {
         : [];
 
     let text = "";
-
     text += "=== Geometry snapshots (bar model) ===\n";
+
     if (!snapshots.length) {
       text +=
         "No geometry snapshots available. You may not have any steps yet.\n";
@@ -1100,7 +1107,8 @@ function setupGeometrySimulationUI() {
         if (Array.isArray(snap.segments)) {
           snap.segments.forEach((seg, segIndex) => {
             const label = seg.label || `Segment ${segIndex + 1}`;
-            const len = seg.length != null ? seg.length.toFixed(3) : "—";
+            const len =
+              seg.length != null ? seg.length.toFixed(3) : "—";
             const width =
               seg.width != null ? seg.width.toFixed(3) : "—";
             text += `  - ${label}: length ≈ ${len}, width ≈ ${width}\n`;
@@ -1115,11 +1123,10 @@ function setupGeometrySimulationUI() {
     const preview = buildHeuristicPreviewFromAppState(appState);
     const previewText = describeHeuristicPreview(preview);
 
-    function appendFeasibilitySection(textInput) {
+    function appendFeasibilitySection(t) {
       const pf = appState.planFeasibility;
-      if (!pf) return textInput;
+      if (!pf) return t;
 
-      let t = textInput;
       t += "\n\n=== Constraints / Feasibility Summary ===\n";
 
       if (pf.status === "implausible") {
@@ -1150,7 +1157,9 @@ function setupGeometrySimulationUI() {
   });
 }
 
-/* ----------------- APP INIT ----------------- */
+/* -------------------------------------------------------------------------- */
+/* APP INIT                                                                   */
+/* -------------------------------------------------------------------------- */
 
 function initApp() {
   console.log("Smithing Storyboarder booting up…");
