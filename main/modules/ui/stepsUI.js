@@ -29,6 +29,10 @@
 //   }
 
 import { getOperationLabel } from "../operations.js";
+import {
+  buildBarDrawingModelFromStockSnapshot,
+  createBarSvg,
+} from "../drawingEngine.js";
 
 /* -------------------------------------------------------------------------
  * Small helpers
@@ -51,6 +55,51 @@ function formatVolume(value) {
  */
 function safeString(value) {
   return typeof value === "string" ? value : "";
+}
+
+function getOperationIconForType(operationType) {
+  if (!operationType) return "⚒️";
+  switch (operationType) {
+    case "draw_out":
+      return "📏";
+    case "taper":
+      return "🔻";
+    case "upset":
+      return "⬛";
+    case "bend":
+      return "📐";
+    case "scroll":
+      return "🌀";
+    case "twist":
+      return "🌀";
+    case "fuller":
+      return "🛠️";
+    case "section_change":
+      return "🔁";
+    case "flatten":
+      return "🔲";
+    case "straighten":
+      return "➖";
+    case "setdown":
+      return "📉";
+
+    case "cut":
+    case "trim":
+    case "slit":
+    case "split":
+      return "✂️";
+
+    case "punch":
+    case "drift":
+      return "🕳️";
+
+    case "weld":
+    case "collar":
+      return "➕";
+
+    default:
+      return "⚒️";
+  }
 }
 
 /**
@@ -78,51 +127,46 @@ function extractUserDescription(step) {
  */
 function buildParamLines(params = {}) {
   const lines = [];
-  const hiddenKeys = new Set([
-    "description",
-    "massChangeTypeOverride",
-    "volumeDeltaOverride",
-    "volumeDelta",
-    "volumeOverride",
-  ]);
 
-  for (const [key, raw] of Object.entries(params)) {
-    if (hiddenKeys.has(key)) continue;
-    if (raw === null || raw === undefined || raw === "") continue;
+  const entries = Object.entries(params);
+  entries.forEach(([key, value]) => {
+    if (!value && value !== 0) return;
+    if (key === "description") return;
 
-    let label = key
-      .replace(/_/g, " ")
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .toLowerCase();
+    const valStr =
+      typeof value === "number"
+        ? value.toString()
+        : typeof value === "string"
+        ? value.trim()
+        : "";
 
-    // Light tidying
-    label = label.replace(/\bdeg\b/, "degrees");
-
-    lines.push(`${label}: ${raw}`);
-  }
+    if (!valStr) return;
+    lines.push(`${key}: ${valStr}`);
+  });
 
   return lines;
 }
 
 /**
- * Compute a simple icon + label for a step's conservation status.
- * Uses Phase 5 fields: step.conservationStatus, step.conservationIssue.
+ * Compute icon + label for a step's Phase 5 volume conservation status.
+ * Uses step.conservationStatus and step.conservationIssue.
  */
 function getConservationBadge(step) {
   if (!step) {
-    return { icon: "❔", label: "no volume data" };
+    return { icon: "❔", label: "volume unknown" };
   }
 
   const status = step.conservationStatus || "unknown";
 
   switch (status) {
     case "ok":
-      return { icon: "✅", label: "volume ok" };
+      return { icon: "✅", label: "volume plausible" };
     case "warning":
-      return { icon: "⚠️", label: "check volume" };
-    case "unknown":
+      return { icon: "⚠️", label: "volume questionable" };
+    case "error":
+      return { icon: "❌", label: "volume inconsistent" };
     default:
-      return { icon: "❔", label: "no volume data" };
+      return { icon: "❔", label: "volume unknown" };
   }
 }
 
@@ -139,28 +183,27 @@ function getFeasibilityBadge(step) {
 
   switch (status) {
     case "implausible":
-      return { icon: "⛔", label: "implausible" };
+      return { icon: "⛔", label: "implausible step" };
     case "aggressive":
-      return { icon: "⚠️", label: "aggressive" };
+      return { icon: "⚠️", label: "aggressive but possible" };
     case "ok":
-      return { icon: "✅", label: "feasible" };
+      return { icon: "✅", label: "feasible step" };
     default:
       return { icon: "❔", label: "feasibility unknown" };
   }
 }
 
 /* -------------------------------------------------------------------------
- * Steps list rendering
+ * Step list rendering
  * ---------------------------------------------------------------------- */
 
 /**
- * Render the list of steps into the given container element.
+ * Render the list of ForgeStep items into the given container.
  *
- * @param {object} appState - Global app state (must have .steps array).
- * @param {HTMLElement|null} listEl - Container (id="steps-list").
+ * @param {object} appState
+ * @param {HTMLElement|null} listEl
  * @param {object} [options]
  * @param {(step: object, index: number) => void} [options.onDeleteStep]
- *        Optional callback when a step's "Remove" button is clicked.
  */
 export function renderStepsList(appState, listEl, options = {}) {
   const { onDeleteStep } = options;
@@ -170,9 +213,8 @@ export function renderStepsList(appState, listEl, options = {}) {
     return;
   }
 
-  const steps = appState && Array.isArray(appState.steps)
-    ? appState.steps
-    : [];
+  const steps =
+    appState && Array.isArray(appState.steps) ? appState.steps : [];
 
   listEl.innerHTML = "";
 
@@ -196,13 +238,17 @@ export function renderStepsList(appState, listEl, options = {}) {
     const metaDiv = document.createElement("div");
     metaDiv.className = "steps-list-item-meta";
 
-    // Header line: "Step N – Operation label"
+    // Header line: "Step N – Operation label" + operation icon
     const header = document.createElement("div");
     header.className = "steps-list-header";
 
     const stepNum = document.createElement("span");
     stepNum.className = "steps-list-step-number";
     stepNum.textContent = `Step ${index + 1}`;
+
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "steps-list-op-icon";
+    iconSpan.textContent = getOperationIconForType(step.operationType);
 
     const label = document.createElement("span");
     label.className = "steps-list-step-label";
@@ -214,6 +260,7 @@ export function renderStepsList(appState, listEl, options = {}) {
     label.textContent = ` – ${labelText}`;
 
     header.appendChild(stepNum);
+    header.appendChild(iconSpan);
     header.appendChild(label);
     mainDiv.appendChild(header);
 
@@ -233,6 +280,34 @@ export function renderStepsList(appState, listEl, options = {}) {
       desc.textContent = userDesc;
       mainDiv.appendChild(desc);
     }
+
+    // Simple bar thumbnail based on the resulting stock snapshot
+    const thumbnailWrapper = document.createElement("div");
+    thumbnailWrapper.className = "steps-list-thumbnail-wrapper";
+
+    const snapshot =
+      step.resultingStockSnapshot || appState.currentStockState || null;
+
+    if (snapshot) {
+      try {
+        const model = buildBarDrawingModelFromStockSnapshot(snapshot);
+        const svg = createBarSvg(model, {
+          width: 120,
+          height: 40,
+          title: "Bar shape after this step",
+        });
+        thumbnailWrapper.appendChild(svg);
+      } catch (err) {
+        console.warn("[stepsUI] Failed to render step thumbnail", err);
+        thumbnailWrapper.textContent = "No drawing available";
+        thumbnailWrapper.classList.add("steps-list-thumbnail-placeholder");
+      }
+    } else {
+      thumbnailWrapper.textContent = "No drawing available";
+      thumbnailWrapper.classList.add("steps-list-thumbnail-placeholder");
+    }
+
+    mainDiv.appendChild(thumbnailWrapper);
 
     // Parameter lines
     const paramLines = buildParamLines(step.params || {});
@@ -280,96 +355,103 @@ export function renderStepsList(appState, listEl, options = {}) {
     }
 
     // Volume delta / heuristic
-    const vol = Number.isFinite(Number(step.volumeDelta))
-      ? Number(step.volumeDelta)
-      : null;
-    const suggested = Number.isFinite(Number(step.suggestedVolumeDelta))
-      ? Number(step.suggestedVolumeDelta)
-      : null;
+    const vol =
+      Number.isFinite(Number(step.volumeDelta)) &&
+      step.volumeDelta !== null &&
+      step.volumeDelta !== undefined
+        ? Number(step.volumeDelta)
+        : null;
+    const suggested =
+      Number.isFinite(Number(step.suggestedVolumeDelta)) &&
+      step.suggestedVolumeDelta !== null &&
+      step.suggestedVolumeDelta !== undefined
+        ? Number(step.suggestedVolumeDelta)
+        : null;
 
-    if (Number.isFinite(vol) && vol > 0) {
-      const action =
-        step.massChangeType === "removed"
-          ? "volume removed"
-          : step.massChangeType === "added"
-          ? "volume added"
-          : "volume Δ";
+    if (vol !== null || suggested !== null) {
+      let volLine = "";
 
-      metaBits.push(`${formatVolume(vol)} ${action}`);
-    } else if (step.massChangeType === "conserved") {
-      metaBits.push("ΔV ≈ 0 (conserved)");
+      if (vol !== null) {
+        volLine += `ΔV: ${formatVolume(vol)}`;
+      }
+      if (suggested !== null) {
+        if (volLine) volLine += " (heuristic ";
+        else volLine += "Heuristic ";
+        volLine += `ΔV: ${formatVolume(suggested)})`;
+      }
+
+      if (volLine) {
+        metaBits.push(volLine);
+      }
     }
 
-    // Heuristic hint if we have a suggested volume that differs
+    // Resulting volume after this step (if set)
     if (
-      Number.isFinite(suggested) &&
-      suggested > 0 &&
-      (!Number.isFinite(vol) || Math.abs(suggested - vol) > 1e-6)
+      step.resultingVolume !== null &&
+      step.resultingVolume !== undefined &&
+      Number.isFinite(Number(step.resultingVolume))
     ) {
-      metaBits.push(`heuristic: ~${formatVolume(suggested)}`);
-    }
-
-    // Phase 5: resulting volume after this step
-    if (step.resultingVolume != null) {
       metaBits.push(
-        `vol after step: ${formatVolume(step.resultingVolume)}`
+        `V after: ${formatVolume(Number(step.resultingVolume))}`
       );
     }
 
-    // Phase 5: conservation badge
-    const badge = getConservationBadge(step);
-    metaBits.push(`${badge.icon} ${badge.label}`);
-
-    // Phase 6: feasibility badge
-    const feasBadge = getFeasibilityBadge(step);
-    metaBits.push(`${feasBadge.icon} ${feasBadge.label}`);
-
-    if (metaBits.length) {
-      const metaText = document.createElement("div");
-      metaText.textContent = metaBits.join(" · ");
-      metaDiv.appendChild(metaText);
+    // Conservation badge
+    const conservationBadge = getConservationBadge(step);
+    if (conservationBadge) {
+      metaBits.push(
+        `${conservationBadge.icon} ${conservationBadge.label}`
+      );
     }
 
-    // If this step has a specific conservation issue, show a small note
-    if (
-      step.conservationStatus === "warning" &&
-      typeof step.conservationIssue === "string" &&
-      step.conservationIssue.trim()
-    ) {
-      const issueEl = document.createElement("div");
-      issueEl.className = "steps-list-conservation-issue";
-      issueEl.textContent = step.conservationIssue.trim();
-      metaDiv.appendChild(issueEl);
+    // Feasibility / constraint badge
+    const feasibilityBadge = getFeasibilityBadge(step);
+    if (feasibilityBadge) {
+      metaBits.push(`${feasibilityBadge.icon} ${feasibilityBadge.label}`);
     }
+
+    // Attach meta bits into the metaDiv
+    metaBits.forEach((text) => {
+      if (!text) return;
+      const lineEl = document.createElement("div");
+      lineEl.className = "steps-list-meta-line";
+      lineEl.textContent = text;
+      metaDiv.appendChild(lineEl);
+    });
 
     // Phase 6: constraint warnings/errors (feasibility notes)
     const constraintMessages = [];
     if (Array.isArray(step.constraintErrors) && step.constraintErrors.length) {
       constraintMessages.push(`⛔ ${step.constraintErrors[0]}`);
     }
-    if (Array.isArray(step.constraintWarnings) && step.constraintWarnings.length) {
+    if (
+      Array.isArray(step.constraintWarnings) &&
+      step.constraintWarnings.length
+    ) {
       const firstWarning = step.constraintWarnings[0];
-      if (
-        !constraintMessages.length ||
-        constraintMessages[0].indexOf(firstWarning) === -1
-      ) {
-        constraintMessages.push(`⚠️ ${firstWarning}`);
-      }
+      constraintMessages.push(`⚠️ ${firstWarning}`);
     }
 
     if (constraintMessages.length) {
-      const constraintEl = document.createElement("div");
-      constraintEl.className = "steps-list-constraint-issue";
-      constraintEl.textContent = constraintMessages.join(" ");
-      metaDiv.appendChild(constraintEl);
+      const constraintsBlock = document.createElement("div");
+      constraintsBlock.className = "steps-list-constraints";
+
+      constraintMessages.forEach((msg) => {
+        const lineEl = document.createElement("div");
+        lineEl.className = "steps-list-constraints-line";
+        lineEl.textContent = msg;
+        constraintsBlock.appendChild(lineEl);
+      });
+
+      metaDiv.appendChild(constraintsBlock);
     }
 
-    // Optional delete button (hooked up only if onDeleteStep is provided)
+    // Optional delete button, if onDeleteStep is provided
     if (typeof onDeleteStep === "function") {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
-      deleteBtn.className = "steps-delete-btn";
-      deleteBtn.textContent = "Remove";
+      deleteBtn.className = "steps-list-delete-button";
+      deleteBtn.textContent = "Delete step";
       deleteBtn.addEventListener("click", () => {
         onDeleteStep(step, index);
       });
@@ -387,10 +469,10 @@ export function renderStepsList(appState, listEl, options = {}) {
  * ---------------------------------------------------------------------- */
 
 /**
- * Render the volume budget summary + high-level warnings.
+ * Render the volume budget summary below the steps list.
  *
- * @param {object} appState - global state (must have .volumeSummary).
- * @param {HTMLElement|null} summaryEl - Container (id="steps-volume-summary").
+ * @param {object} appState
+ * @param {HTMLElement|null} summaryEl
  */
 export function renderStepsVolumeSummary(appState, summaryEl) {
   if (!summaryEl) {
@@ -398,112 +480,77 @@ export function renderStepsVolumeSummary(appState, summaryEl) {
     return;
   }
 
-  const vs = appState && appState.volumeSummary;
-  summaryEl.classList.add("steps-volume-summary");
+  summaryEl.innerHTML = "";
 
-  if (!vs) {
-    summaryEl.textContent =
-      "Volume budget will appear here after you set starting stock and add steps.";
+  if (!appState || !appState.volumeSummary) {
+    const msg = document.createElement("p");
+    msg.textContent =
+      "No volume summary available yet. Define starting stock, target shape, and add steps.";
+    msg.className = "steps-volume-empty";
+    summaryEl.appendChild(msg);
     return;
   }
 
-  const {
-    startingVolume,
-    targetVolume,
-    removedVolume,
-    addedVolume,
-    netVolume,
-    predictedFinalVolume,
-    volumeWarnings,
-  } = vs;
+  const vs = appState.volumeSummary;
+  const wrapper = document.createElement("div");
+  wrapper.className = "steps-volume-summary";
 
-  const lines = [];
+  const mainList = document.createElement("ul");
+  mainList.className = "steps-volume-main";
 
-  // Basic removed/added totals
-  lines.push(
-    `Total volume removed by steps: ${formatVolume(
-      removedVolume
-    )}  ·  Total volume added: ${formatVolume(addedVolume)}`
+  function addVolumeItem(label, value, extraClass) {
+    const li = document.createElement("li");
+    li.className = "steps-volume-item";
+    if (extraClass) {
+      li.classList.add(extraClass);
+    }
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "steps-volume-label";
+    labelSpan.textContent = label;
+
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "steps-volume-value";
+    valueSpan.textContent = formatVolume(value);
+
+    li.appendChild(labelSpan);
+    li.appendChild(valueSpan);
+    mainList.appendChild(li);
+  }
+
+  addVolumeItem("Starting volume:", vs.startingVolume, "steps-volume-start");
+  addVolumeItem("Target volume:", vs.targetVolume, "steps-volume-target");
+  addVolumeItem(
+    "Predicted final volume:",
+    vs.predictedFinalVolume,
+    "steps-volume-final"
   );
+  addVolumeItem(
+    "Volume removed:",
+    vs.removedVolume,
+    "steps-volume-removed"
+  );
+  addVolumeItem("Volume added:", vs.addedVolume, "steps-volume-added");
+  addVolumeItem("Net volume change:", vs.netVolume, "steps-volume-net");
 
-  // Starting stock
-  if (Number.isFinite(startingVolume)) {
-    lines.push(
-      `Starting stock volume: ${formatVolume(startingVolume)} (units³)`
-    );
-  } else {
-    lines.push(
-      "Starting stock volume: (unknown — define starting stock to see this)."
-    );
-  }
+  wrapper.appendChild(mainList);
 
-  // Predicted final volume
-  if (Number.isFinite(predictedFinalVolume)) {
-    lines.push(
-      `Predicted final stock volume (evolved with steps): ${formatVolume(
-        predictedFinalVolume
-      )} (units³)`
-    );
-  }
+  // Warnings (if any)
+  if (Array.isArray(vs.volumeWarnings) && vs.volumeWarnings.length) {
+    const warningsBlock = document.createElement("div");
+    warningsBlock.className = "steps-volume-warnings";
 
-  // Net change (if available)
-  if (Number.isFinite(netVolume)) {
-    const sign = netVolume >= 0 ? "+" : "−";
-    lines.push(
-      `Net change relative to starting stock: ${sign}${formatVolume(
-        Math.abs(netVolume)
-      )} (units³)`
-    );
-  }
-
-  // Target shape volume (if any)
-  if (Number.isFinite(targetVolume)) {
-    lines.push(`Target shape volume: ${formatVolume(targetVolume)} (units³)`);
-  }
-
-  // Warnings (from appState.volumeSummary)
-  if (Array.isArray(volumeWarnings) && volumeWarnings.length) {
-    lines.push("");
-    lines.push("Warnings:");
-    volumeWarnings.forEach((w) => {
-      lines.push(`⚠️ ${w}`);
+    vs.volumeWarnings.forEach((warning) => {
+      const w = document.createElement("div");
+      w.className = "steps-volume-warning";
+      w.textContent = warning;
+      warningsBlock.appendChild(w);
     });
-  } else if (
-    Number.isFinite(startingVolume) &&
-    Number.isFinite(predictedFinalVolume)
-  ) {
-    lines.push("");
-    lines.push(
-      "✅ Volume budget looks physically plausible based on current heuristic estimates."
-    );
+
+    wrapper.appendChild(warningsBlock);
   }
 
-  // Phase 6: overall plan feasibility (constraints engine)
-  const pf = appState && appState.planFeasibility;
-  if (pf && pf.status && pf.status !== "unknown") {
-    lines.push("");
-    let statusLine = "Constraints engine: ";
-    if (pf.status === "implausible") {
-      statusLine += "❌ some steps look implausible.";
-    } else if (pf.status === "aggressive") {
-      statusLine += "⚠️ plan looks aggressive in places.";
-    } else if (pf.status === "ok") {
-      statusLine += "✅ plan looks physically plausible.";
-    } else {
-      statusLine += "feasibility unknown.";
-    }
-    lines.push(statusLine);
-
-    if (Array.isArray(pf.messages) && pf.messages.length) {
-      pf.messages.forEach((msg) => {
-        if (typeof msg === "string" && msg.trim()) {
-          lines.push(`• ${msg.trim()}`);
-        }
-      });
-    }
-  }
-
-  summaryEl.textContent = lines.join("\n");
+  summaryEl.appendChild(wrapper);
 }
 
 /* -------------------------------------------------------------------------
@@ -525,10 +572,10 @@ export function renderStepsPanel(appState, listEl, summaryEl, options = {}) {
 }
 
 /**
- * Show a card-level error message for the Steps card.
+ * Show a card-level error for the Steps card.
  *
  * @param {HTMLElement|null} errorEl
- * @param {string} message
+ * @param {string} [message]
  */
 export function showStepsError(errorEl, message) {
   if (!errorEl) {
