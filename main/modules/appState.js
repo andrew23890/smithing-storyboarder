@@ -244,10 +244,6 @@ export function recomputeTimeline() {
     stepStockStates.push(currentStock);
   }
 
-  // Phase 6: aggregate feasibility stats as we walk the steps
-  let aggressiveCount = 0;
-  let implausibleCount = 0;
-
   if (!currentStock && steps.length) {
     // We can’t say much about per-step volume without starting stock.
     steps.forEach((step) => {
@@ -302,10 +298,8 @@ export function recomputeTimeline() {
 
           if (hasErrors) {
             feasibilityStatus = "implausible";
-            implausibleCount += 1;
           } else if (hasWarnings) {
             feasibilityStatus = "aggressive";
-            aggressiveCount += 1;
           }
 
           step.setConstraintResult({
@@ -405,7 +399,7 @@ export function recomputeTimeline() {
             status = "warning";
             issue =
               issue ||
-              "This step adds a very large amount of materi... to the current stock. Check welded/collared piece dimensions.";
+              "This step adds a very large amount of material to the current stock. Check welded/collared piece dimensions.";
           }
         } else {
           // No strong opinion; treat as OK if we can’t detect anything odd.
@@ -445,8 +439,11 @@ export function recomputeTimeline() {
   if (typeof checkPlanEndState === "function" && startingStock && currentStock) {
     try {
       const result =
-        checkPlanEndState(startingStock, currentStock, appState.targetShape || null) ||
-        {
+        checkPlanEndState(
+          startingStock,
+          currentStock,
+          appState.targetShape || null
+        ) || {
           warnings: [],
           errors: [],
         };
