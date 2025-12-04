@@ -27,217 +27,266 @@ body {
 }
 
 .app-header h1 {
-  font-size: 1.5rem;
+  font-size: 1.7rem;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .app-tagline {
   margin-top: 0.25rem;
   font-size: 0.9rem;
-  opacity: 0.9;
+  color: #e5e7eb;
 }
 
 .app-main {
-  max-width: 1100px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 0.75rem 1rem 2rem;
+  padding: 1rem 1rem 2rem;
 }
 
-/* Card layout */
+/* Cards */
 .card {
-  background: #f9fafb;
+  background-color: #f9fafb;
   border-radius: 0.75rem;
-  padding: 0.75rem 0.9rem 0.9rem;
-  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.42);
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  backdrop-filter: blur(10px);
-  margin-bottom: 0.9rem;
-}
-
-.card + .card {
-  margin-top: 0.1rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
 }
 
 .card h2 {
   font-size: 1.1rem;
   margin-bottom: 0.25rem;
-  letter-spacing: 0.02em;
+  color: #111827;
 }
 
 .card-intro {
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   color: #4b5563;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.7rem;
 }
 
-/* Errors */
-.card-error {
-  margin-top: 0.4rem;
-  font-size: 0.85rem;
-  color: #b91c1c;
-  min-height: 1.1rem;
-}
-
-/* Summary / output blocks */
-.card-summary {
+.card-actions {
   margin-top: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 0.6rem;
-  border: 1px dashed #d1d5db;
-  font-size: 0.86rem;
-  color: #111827;
-  background: #fefce8;
-  white-space: pre-wrap;
-}
-
-/* Generic helper text */
-.helper-text {
-  font-size: 0.8rem;
-  color: #6b7280;
-}
-
-/* Fields & form layout */
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.5rem 0.75rem;
-}
-
-.steps-form-grid {
-  display: grid;
-  grid-template-columns: 1.6fr 1.2fr 0.9fr 0.9fr;
-  gap: 0.4rem 0.6rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.field label {
-  font-size: 0.86rem;
-  font-weight: 500;
-  color: #111827;
-}
-
-.field input[type="text"],
-.field input[type="number"],
-.field select,
-.field textarea {
-  font-family: inherit;
-  font-size: 0.88rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  background-color: #ffffff;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.field input[type="text"]:focus,
-.field input[type="number"]:focus,
-.field select:focus,
-.field textarea:focus {
-  outline: none;
-  border-color: #f97316;
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.2);
-  background-color: #f9fafb;
-}
-
-.field textarea {
-  min-height: 2.7rem;
-  resize: vertical;
-}
-
-.field-inline {
   display: flex;
   gap: 0.5rem;
-  align-items: baseline;
+  flex-wrap: wrap;
 }
 
-/* Inline field errors */
-.field-error {
-  min-height: 0.9rem;
-  font-size: 0.8rem;
-  color: #b91c1c;
+.card-actions-spaced {
+  justify-content: space-between;
+  align-items: center;
 }
 
-.field.field-invalid input,
-.field.field-invalid select,
-.field.field-invalid textarea {
-  border-color: #b91c1c;
-  background-color: #fef2f2;
-}
-
-/* Secondary “optional” hint */
-.field-secondary-text {
-  font-size: 0.8rem;
-  color: #6b7280;
-}
-
-/* We leave this for JS to toggle visibility */
-.field-secondary {
-}
-
-/* Primary & secondary buttons */
+/* Buttons */
 .primary-btn,
-#hello-button {
-  margin-top: 0.5rem;
-  padding: 0.6rem 1.1rem;
-  border-radius: 999px;
-  border: none;
+.secondary-btn {
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.9rem;
   font-size: 0.86rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-weight: 500;
   cursor: pointer;
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  color: #111827;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.4);
+  border: 1px solid transparent;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.25rem;
+  white-space: nowrap;
 }
 
-.primary-btn:hover,
-#hello-button:hover {
-  background: linear-gradient(135deg, #fb923c, #f97316);
-  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.55);
+.primary-btn {
+  background-color: #f97316;
+  color: #111827;
+  border-color: #ea580c;
 }
 
-.primary-btn:active,
-#hello-button:active {
-  transform: translateY(1px);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.5);
+.primary-btn:hover {
+  background-color: #fb923c;
 }
 
-/* Secondary / subtle button (like “Clear steps”) */
 .secondary-btn {
-  margin-top: 0.4rem;
-  padding: 0.4rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background-color: #f9fafb;
-  color: #374151;
-  font-size: 0.8rem;
-  cursor: pointer;
+  background-color: #ffffff;
+  color: #111827;
+  border-color: #d1d5db;
 }
 
 .secondary-btn:hover {
   background-color: #f3f4f6;
 }
 
-/* Hello demo */
-.hello-demo {
+/* Form layout */
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+}
+
+.stock-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.stock-form-grid .field:nth-child(1) {
+  grid-column: span 2;
+}
+
+.stock-form-grid .field:nth-child(2) {
+  grid-column: span 2;
+}
+
+.stock-form-grid .field:nth-child(3),
+.stock-form-grid .field:nth-child(4) {
+  grid-column: span 1;
+}
+
+.stock-form-grid .field:nth-child(5),
+.stock-form-grid .field:nth-child(6) {
+  grid-column: span 1;
+}
+
+.target-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.target-form-grid .field-span-2 {
+  grid-column: span 2;
+}
+
+.cad-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.steps-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.steps-form-grid .field:nth-child(1) {
+  grid-column: span 2;
+}
+
+.steps-form-grid .field:nth-child(2) {
+  grid-column: span 2;
+}
+
+.steps-form-grid .field:nth-child(3) {
+  grid-column: span 2;
+}
+
+.steps-form-grid .field:nth-child(4) {
+  grid-column: span 2;
+}
+
+.steps-form-grid .field:nth-child(5) {
+  grid-column: span 2;
+}
+
+.steps-form-grid .field:nth-child(6) {
+  grid-column: span 2;
+}
+
+/* Fields */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #111827;
+}
+
+.field .hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #6b7280;
+  margin-left: 0.2rem;
+}
+
+.field input[type="number"],
+.field input[type="text"],
+.field select,
+.field textarea {
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.86rem;
+  font-family: inherit;
+  color: #111827;
+  background-color: #ffffff;
+}
+
+.field input[type="number"]:focus,
+.field input[type="text"]:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: #f97316;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Inline field error */
+.field-error-message {
+  margin-top: 0.05rem;
+  font-size: 0.75rem;
+  color: #b91c1c;
+  min-height: 0.9em;
+}
+
+/* Card-level errors */
+.card-error {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+
+/* Hello section */
+.hello-output {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: #111827;
+}
+
+/* Stock summary */
+.stock-summary {
   margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: #374151;
-  padding: 0.5rem 0.75rem;
   border-radius: 0.6rem;
   border: 1px dashed #d1d5db;
-  background: #ecfdf5;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.83rem;
+  background-color: #ffffff;
+}
+
+.stock-summary p {
+  margin: 0.1rem 0;
+}
+
+/* Target comparison */
+.target-compare {
+  margin-top: 0.5rem;
+  border-radius: 0.6rem;
+  border: 1px dashed #d1d5db;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.83rem;
+  background-color: #fefce8;
+  color: #374151;
+  white-space: pre-wrap;
 }
 
 /* Steps list */
@@ -289,6 +338,7 @@ body {
   color: #6b7280;
 }
 
+/* (Legacy) delete button – kept for backward-compat if referenced */
 .steps-delete-btn {
   border: none;
   border-radius: 999px;
@@ -306,29 +356,130 @@ body {
 /* Steps volume summary */
 .steps-volume-summary {
   margin-top: 0.65rem;
-  padding: 0.5rem 0.65rem;
   border-radius: 0.6rem;
-  border: 1px dashed #e5e7eb;
-  font-size: 0.82rem;
-  background-color: #eff6ff;
-  white-space: pre-wrap;
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.83rem;
 }
 
-/* Geometry simulation output */
+.steps-volume-main {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.75rem;
+}
+
+.steps-volume-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.steps-volume-label {
+  color: #4b5563;
+}
+
+.steps-volume-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.steps-volume-start .steps-volume-value {
+  font-weight: 600;
+  color: #111827;
+}
+
+.steps-volume-target .steps-volume-value {
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.steps-volume-final .steps-volume-value {
+  font-weight: 600;
+  color: #b91c1c;
+}
+
+.steps-volume-removed .steps-volume-value {
+  color: #b91c1c;
+}
+
+.steps-volume-added .steps-volume-value {
+  color: #22c55e;
+}
+
+.steps-volume-net .steps-volume-value {
+  color: #6b7280;
+}
+
+.steps-volume-warnings {
+  margin-top: 0.4rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.steps-volume-warning {
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+
+/* Geometry output */
 .geom-output {
   margin-top: 0.6rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.5rem 0.6rem;
   border-radius: 0.6rem;
-  border: 1px dashed #d1d5db;
-  background-color: #f9fafb;
-  min-height: 120px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
-  font-size: 0.82rem;
-  white-space: pre-wrap;
+  border: 1px solid #e5e7eb;
+  background-color: #111827;
+  color: #e5e7eb;
+  font-size: 0.8rem;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
-/* CAD preview canvas */
+/* Roadmap list */
+.roadmap-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+}
+
+.roadmap-list li {
+  padding: 0.15rem 0;
+  color: #374151;
+}
+
+/* Footer */
+.app-footer {
+  text-align: center;
+  padding: 0.5rem 1rem 1rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* CAD layout */
+.cad-summary-layout {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr);
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.cad-preview-wrapper {
+  border-radius: 0.75rem;
+  border: 1px dashed #e5e7eb;
+  background-color: #f3f4f6;
+  padding: 0.5rem 0.75rem;
+}
+
+.cad-preview-hint {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
 /* NOTE: selectors updated to match index.html + cadPreview.js */
 .cad-preview-canvas-wrapper {
   margin-top: 0.75rem;
@@ -348,7 +499,7 @@ body {
   background-color: #111827;
 }
 
-/* Target compare text */
+/* Target compare area (manual vs target volume) */
 #target-compare {
   margin-top: 0.5rem;
   font-size: 0.83rem;
@@ -371,4 +522,111 @@ body {
   .app-main {
     padding: 1rem 0 2rem;
   }
+}
+
+/* Phase 7: storyboard thumbnails & step preview */
+
+.steps-list-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-bottom: 0.15rem;
+}
+
+.steps-list-step-number {
+  font-weight: 600;
+  color: #111827;
+}
+
+.steps-list-op-icon {
+  font-size: 0.9rem;
+}
+
+.steps-list-step-label {
+  font-weight: 500;
+  color: #111827;
+}
+
+.steps-list-summary {
+  font-size: 0.84rem;
+  color: #111827;
+  margin-bottom: 0.1rem;
+}
+
+.steps-list-description {
+  font-size: 0.82rem;
+  color: #374151;
+  margin-bottom: 0.2rem;
+}
+
+.steps-list-thumbnail-wrapper {
+  margin-top: 0.2rem;
+  margin-bottom: 0.25rem;
+}
+
+.steps-list-thumbnail-placeholder {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+/* Ensure the inline SVG thumbnails look tidy */
+.step-thumbnail-svg {
+  display: block;
+  width: 120px;
+  height: 40px;
+  max-width: 100%;
+}
+
+/* Match delete button style used previously for steps-delete-btn */
+.steps-list-delete-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.steps-list-delete-button:hover {
+  background-color: #fecaca;
+}
+
+/* Step preview (before/after overlay) panel */
+
+.step-preview-panel {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px dashed #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.step-preview-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.step-preview-placeholder {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.step-preview-svg {
+  display: block;
+  width: 160px;
+  height: 52px;
+  max-width: 100%;
+}
+
+/* Optional individual styling for before/after outlines */
+.step-preview-before {
+  /* inherits stroke from SVG; keep subtle */
+}
+
+.step-preview-after {
+  /* inherits stroke from SVG; appears slightly bolder */
 }

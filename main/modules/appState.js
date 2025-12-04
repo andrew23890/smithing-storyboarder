@@ -33,7 +33,7 @@ const EXTREME_REMOVAL_FRACTION = 0.75; // warn if a single step removes >75%
 const EXTREME_ADDITION_FRACTION = 0.75; // warn if a single step adds >75%
 
 /* ------------------------------------------------------------------------- */
-/* Helpers                                                                   */
+/* Helper: volume summary skeleton                                           */
 /* ------------------------------------------------------------------------- */
 
 function makeEmptyVolumeSummary() {
@@ -44,16 +44,15 @@ function makeEmptyVolumeSummary() {
     addedVolume: 0,
     netVolume: NaN,
     predictedFinalVolume: NaN,
-    volumeWarnings: [], // human-readable warning strings
+    volumeWarnings: [],
   };
 }
 
 /**
- * Normalize a maybe-number into a finite number or NaN.
+ * Utility: coerce any numeric-ish value to either a finite number or NaN.
  */
-function asFiniteOrNaN(val) {
-  if (val === null || val === undefined || val === "") return NaN;
-  const n = Number(val);
+function asFiniteOrNaN(value) {
+  const n = Number(value);
   return Number.isFinite(n) ? n : NaN;
 }
 
@@ -67,6 +66,11 @@ export const appState = {
   steps: [], // ForgeStep[]
   currentStockState: null, // Stock | null – after last step
   lastGeometryRun: null, // { baseBar, finalState, snapshots } | null
+
+  // Phase 7: per-step stock snapshots for storyboard / before-after drawings
+  // stepStockStates[i] represents the stock state after applying the i-th step;
+  // index 0 (if present) is the starting stock before any steps.
+  stepStockStates: [],
 
   // Phase 5: volume budget summary
   volumeSummary: makeEmptyVolumeSummary(),
@@ -88,7 +92,7 @@ export function getAppState() {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Core recompute pipeline                                                   */
+/* Volume summary recomputation                                              */
 /* ------------------------------------------------------------------------- */
 
 /**
@@ -134,42 +138,42 @@ function recomputeVolumeSummary() {
   const warnings = [];
 
   // Basic sanity checks
-  if (!appState.startingStock) {
-    warnings.push("Set a starting stock to enable volume budget checks.");
+  if (Number.isFinite(startingVolume) && Number.isFinite(targetVolume)) {
+    const diff = Math.abs(startingVolume - targetVolume);
+    const rel = diff / Math.max(startingVolume, 1e-9);
+    if (rel > 0.15) {
+      warnings.push(
+        `Target volume differs from starting volume by ~${(rel * 100).toFixed(
+          1
+        )}%. You may not have enough material, or you may need to remove more.`
+      );
+    }
   }
 
-  if (!Number.isFinite(startingVolume)) {
-    warnings.push(
-      "Starting stock volume could not be computed; volume checks may be unreliable."
-    );
-  }
-
-  // Compare predicted final vs target volume if both are known
   if (
-    Number.isFinite(vs.predictedFinalVolume) &&
-    Number.isFinite(vs.targetVolume) &&
-    vs.targetVolume > 0
+    Number.isFinite(startingVolume) &&
+    Number.isFinite(vs.predictedFinalVolume)
   ) {
-    const diff = vs.predictedFinalVolume - vs.targetVolume;
-    const rel = Math.abs(diff) / vs.targetVolume;
-
-    if (rel > 0.10) {
-      const pct = (rel * 100).toFixed(1);
-      if (diff > 0) {
-        warnings.push(
-          `Plan ends with about ${pct}% more volume than the target. Expect to refine or remove extra material.`
-        );
-      } else {
-        warnings.push(
-          `Plan ends with about ${pct}% less volume than the target. You may be removing too much material.`
-        );
-      }
+    const diff = Math.abs(startingVolume - vs.predictedFinalVolume);
+    const rel = diff / Math.max(startingVolume, 1e-9);
+    if (rel > 0.2) {
+      warnings.push(
+        `Plan’s predicted final volume differs from starting volume by ~${(
+          rel * 100
+        ).toFixed(
+          1
+        )}%. Check cut lengths, punch diameters, and whether steps are mass-conserving.`
+      );
     }
   }
 
   vs.volumeWarnings = warnings;
   appState.volumeSummary = vs;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Timeline recomputation: geometry + volume + constraints                   */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Primary recompute function:
@@ -183,6 +187,9 @@ function recomputeVolumeSummary() {
 export function recomputeTimeline() {
   const startingStock = appState.startingStock || null;
   const steps = appState.steps || [];
+
+  // Reset per-step stock snapshots for this recompute.
+  appState.stepStockStates = [];
 
   /* ---- 1) Geometry engine: authoritative shape evolution ---- */
 
@@ -229,6 +236,14 @@ export function recomputeTimeline() {
       ? asFiniteOrNaN(currentStock.computeVolume())
       : NaN;
 
+  // Phase 7: capture stock snapshots for before/after storyboard drawings.
+  // We treat index 0 (if present) as the starting stock, and each subsequent
+  // index i as the state after applying step i.
+  const stepStockStates = [];
+  if (currentStock) {
+    stepStockStates.push(currentStock);
+  }
+
   // Phase 6: aggregate feasibility stats as we walk the steps
   let aggressiveCount = 0;
   let implausibleCount = 0;
@@ -265,11 +280,7 @@ export function recomputeTimeline() {
         nextVolume = prevVolume;
       }
 
-      if (typeof step.setResultingSnapshot === "function") {
-        step.setResultingSnapshot(nextStock, nextVolume);
-      }
-
-      // Phase 6: physical feasibility / constraint checks (advisory)
+      // Phase 6: per-step constraint checks
       if (
         typeof validateStep === "function" &&
         typeof step.setConstraintResult === "function"
@@ -277,7 +288,6 @@ export function recomputeTimeline() {
         try {
           const constraintResult =
             validateStep(currentStock, step, nextStock) || {
-              valid: true,
               warnings: [],
               errors: [],
             };
@@ -317,31 +327,43 @@ export function recomputeTimeline() {
       let issue = null;
 
       const massType =
-        step.massChangeType ||
+        (step.massChangeType &&
+          ["conserved", "removed", "added"].includes(step.massChangeType) &&
+          step.massChangeType) ||
         getOperationMassChangeType(step.operationType) ||
         "conserved";
 
-      const volDeltaRaw = asFiniteOrNaN(step.volumeDelta);
-      const volDelta = volDeltaRaw > 0 ? volDeltaRaw : 0;
+      const volDelta = asFiniteOrNaN(step.volumeDelta);
+      const actualDelta =
+        Number.isFinite(prevVolume) && Number.isFinite(nextVolume)
+          ? nextVolume - prevVolume
+          : NaN;
 
-      if (Number.isFinite(prevVolume) && Number.isFinite(nextVolume)) {
-        const actualDelta = nextVolume - prevVolume; // negative for removal
+      if (
+        massType === "conserved" &&
+        Number.isFinite(prevVolume) &&
+        Number.isFinite(nextVolume)
+      ) {
+        const diff = Math.abs(actualDelta);
+        const rel = diff / Math.max(prevVolume, 1e-9);
 
-        if (massType === "conserved") {
-          const expectedAfter = prevVolume - volDelta;
-          const diff = Math.abs(nextVolume - expectedAfter);
-          const rel =
-            expectedAfter > 0 ? diff / Math.max(expectedAfter, 1e-9) : 0;
-
-          if (diff <= VOLUME_ABS_TOL || rel <= VOLUME_REL_TOL) {
-            status = "ok";
-          } else {
-            status = "warning";
-            issue = `Volume-conserving step changed volume more than expected (ΔV ≈ ${diff.toFixed(
-              3
-            )} units³). Check dimensions or overrides.`;
-          }
-        } else if (massType === "removed" && volDelta > 0 && prevVolume > 0) {
+        if (diff <= VOLUME_ABS_TOL || rel <= VOLUME_REL_TOL) {
+          status = "ok";
+        } else {
+          status = "warning";
+          issue = `Mass-conserving step changed volume by ~${(
+            rel * 100
+          ).toFixed(
+            1
+          )}%. Check if this operation should actually add/remove material.`;
+        }
+      } else if (Number.isFinite(volDelta)) {
+        // For removed/added, compare actualDelta to requested volDelta.
+        if (
+          massType === "removed" &&
+          volDelta > 0 &&
+          Number.isFinite(prevVolume)
+        ) {
           const expectedDelta = -volDelta;
           const diff = Math.abs(actualDelta - expectedDelta);
           const rel = diff / Math.max(volDelta, 1e-9);
@@ -383,7 +405,7 @@ export function recomputeTimeline() {
             status = "warning";
             issue =
               issue ||
-              "This step adds a very large amount of material to the current stock. Check welded/collared piece dimensions.";
+              "This step adds a very large amount of materi... to the current stock. Check welded/collared piece dimensions.";
           }
         } else {
           // No strong opinion; treat as OK if we can’t detect anything odd.
@@ -404,10 +426,16 @@ export function recomputeTimeline() {
 
       currentStock = nextStock;
       prevVolume = nextVolume;
+
+      // Record snapshot after this step for storyboard previews.
+      if (nextStock) {
+        stepStockStates.push(nextStock);
+      }
     });
   }
 
   appState.currentStockState = currentStock;
+  appState.stepStockStates = stepStockStates;
 
   /* ---- 3) Plan-level feasibility summary (Phase 6; advisory only) ---- */
 
@@ -437,22 +465,22 @@ export function recomputeTimeline() {
     }
   }
 
-  const warningsCount = aggressiveCount + planWarnings.length;
-  const errorsCount = implausibleCount + planErrors.length;
-
-  let overallStatus = "ok";
-  if (errorsCount > 0) {
-    overallStatus = "implausible";
-  } else if (warningsCount > 0) {
-    overallStatus = "aggressive";
-  } else if (!startingStock || !steps.length) {
-    overallStatus = "unknown";
-  }
+  const aggressiveCount = steps.filter(
+    (s) => s && s.feasibilityStatus === "aggressive"
+  ).length;
+  const implausibleCount = steps.filter(
+    (s) => s && s.feasibilityStatus === "implausible"
+  ).length;
 
   appState.planFeasibility = {
-    status: overallStatus,
-    warningsCount,
-    errorsCount,
+    status:
+      implausibleCount > 0
+        ? "implausible"
+        : aggressiveCount > 0
+        ? "aggressive"
+        : "ok",
+    warningsCount: aggressiveCount,
+    errorsCount: implausibleCount,
     messages: [
       aggressiveCount > 0
         ? `${aggressiveCount} step(s) flagged as aggressive.`
@@ -468,31 +496,10 @@ export function recomputeTimeline() {
   /* ---- 4) Global volume summary + warnings (including per-step issues) ---- */
 
   recomputeVolumeSummary();
-
-  // Add per-step conservation warnings into the global volume summary
-  const stepWarnings = [];
-  (appState.steps || []).forEach((step, index) => {
-    if (
-      step &&
-      step.conservationStatus === "warning" &&
-      step.conservationIssue
-    ) {
-      stepWarnings.push(
-        `Step ${index + 1} (${step.label}): ${step.conservationIssue}`
-      );
-    }
-  });
-
-  if (stepWarnings.length && appState.volumeSummary) {
-    appState.volumeSummary.volumeWarnings = [
-      ...(appState.volumeSummary.volumeWarnings || []),
-      ...stepWarnings,
-    ];
-  }
 }
 
 /* ------------------------------------------------------------------------- */
-/* State mutation helpers                                                    */
+/* Public mutators                                                           */
 /* ------------------------------------------------------------------------- */
 
 /**
@@ -521,11 +528,14 @@ export function addStep(step) {
 }
 
 /**
- * Remove a step by ID (or by reference) and recompute.
+ * Remove a step by id (string) or by instance reference.
  */
 export function removeStep(stepOrId) {
+  if (!stepOrId) return;
   const id =
-    typeof stepOrId === "object" && stepOrId !== null
+    typeof stepOrId === "string"
+      ? stepOrId
+      : stepOrId && typeof stepOrId.id === "string"
       ? stepOrId.id
       : stepOrId;
 
@@ -550,6 +560,7 @@ export function clearAll() {
   appState.steps = [];
   appState.currentStockState = null;
   appState.lastGeometryRun = null;
+  appState.stepStockStates = [];
   appState.volumeSummary = makeEmptyVolumeSummary();
   appState.planFeasibility = {
     status: "unknown",
@@ -570,6 +581,9 @@ export function debugLogState() {
     hasTargetShape: !!appState.targetShape,
     stepsCount: appState.steps.length,
     hasCurrentStockState: !!appState.currentStockState,
+    stepStockStatesCount: Array.isArray(appState.stepStockStates)
+      ? appState.stepStockStates.length
+      : 0,
     volumeSummary: appState.volumeSummary,
     planFeasibility: appState.planFeasibility,
   };
