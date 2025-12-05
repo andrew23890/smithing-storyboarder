@@ -12,8 +12,10 @@
 // - We map bar length to a fixed SVG width.
 // - We map thickness to a reasonable height, preserving rough proportions
 //   (long slender bars look slender; short thick bars look chunky).
-// - For now, we treat everything as a single straight bar segment. Later we
-//   can extend this to multiple segments, bends, tapers, etc.
+// - Initially this treated everything as a single straight bar segment.
+//   Phase 7 extends this to add simple symbolic hints for specific operations
+//   (tapers, bends, twists, cuts, holes, etc.), while keeping the old behavior
+//   as a fallback.
 //
 // Public API:
 //   buildBarDrawingModelFromStockSnapshot(snapshot, options?)
@@ -28,15 +30,24 @@
 //     width: number,      // logical viewBox width
 //     height: number,     // logical viewBox height
 //     segments: [         // list of drawable segments
-//       { kind: "rect", x, y, width, height }
+//       { kind: "rect", x, y, width, height },
+//       // Phase 7 adds optional symbolic overlays:
+//       //   { kind: "polygon", points: [{x,y}, ...] }   // tapers, notches
+//       //   { kind: "polyline", points: [{x,y}, ...] } // bends
+//       //   { kind: "line", x1, y1, x2, y2, role? }    // twist/scroll hatching
+//       //   { kind: "circle", cx, cy, r }              // punched / drifted hole
 //     ],
 //     meta: {             // original physical-ish info
 //       rawLength,
 //       thickness,
 //       shape,
-//       units
+//       units,
+//       hasGeometry
 //     }
 //   }
+//
+// NOTE: All new Phase 7 fields are optional. If callers continue to
+//       treat the model as "one rect", everything still works.
 
 // SVG namespace constant
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -89,13 +100,209 @@ function inferThicknessFromSnapshot(snapshot) {
   }
 }
 
+/* ------------------------------------------------------------------------- */
+/* Phase 7 helpers – symbolic operation overlays                             */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Normalize an operation type to a lower-case string, or null if missing.
+ * This deliberately does NOT depend on operations.js to avoid circular deps.
+ */
+function normalizeOperationType(rawOperationType) {
+  if (!rawOperationType) return null;
+  try {
+    const s = String(rawOperationType).trim().toLowerCase();
+    if (!s) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phase 7:
+ * Given the base bar rectangle and a mutable segments array, push additional
+ * symbolic segments that hint at the forge operation:
+ *
+ * - taper  → trapezoid polygon on the tip
+ * - bend   → kinked centerline polyline
+ * - twist / scroll → diagonal hatch lines across the bar
+ * - punch / drift → circle "hole" in the bar
+ * - cut / trim / slit / split → central gap in the bar (two rect segments)
+ *
+ * All of this is *purely visual*. It never throws and never mutates the
+ * snapshot itself; it only tweaks the drawing segments.
+ */
+function applyOperationStylizationToSegments(segments, baseRect, opInfo = {}) {
+  if (!Array.isArray(segments) || !baseRect) return;
+
+  const opType = normalizeOperationType(opInfo.type);
+  if (!opType) return; // No operation → plain bar
+
+  const x = Number(baseRect.x);
+  const y = Number(baseRect.y);
+  const width = Number(baseRect.width);
+  const height = Number(baseRect.height);
+
+  if (!(width > 0) || !(height > 0)) return;
+
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+
+  // Small numeric helpers; never throw.
+  const clamp01 = (v) => {
+    if (!Number.isFinite(v)) return 0;
+    if (v < 0) return 0;
+    if (v > 1) return 1;
+    return v;
+  };
+
+  // --- CUT / TRIM / SLIT / SPLIT → central gap notch ----------------------
+  if (
+    opType === "cut" ||
+    opType === "trim" ||
+    opType === "slit" ||
+    opType === "split"
+  ) {
+    // Represent the cut as a short central gap where the bar is missing.
+    const gapFraction = 0.12;
+    const safeGapFrac = clamp01(gapFraction);
+    const gapWidth = width * safeGapFrac;
+    const gapStart = x + width * 0.5 - gapWidth / 2;
+    const gapEnd = gapStart + gapWidth;
+
+    // Replace the original bar rectangle with two smaller rectangles.
+    segments.length = 0;
+
+    const leftWidth = Math.max(0, gapStart - x);
+    const rightWidth = Math.max(0, x + width - gapEnd);
+
+    if (leftWidth > 0.5) {
+      segments.push({
+        kind: "rect",
+        x,
+        y,
+        width: leftWidth,
+        height,
+      });
+    }
+
+    if (rightWidth > 0.5) {
+      segments.push({
+        kind: "rect",
+        x: gapEnd,
+        y,
+        width: rightWidth,
+        height,
+      });
+    }
+
+    return;
+  }
+
+  // From here on we *keep* the solid bar rect as a base and add overlays.
+
+  // --- TAPER → trapezoid polygon at the far end ---------------------------
+  if (opType === "taper") {
+    const taperStartX = x + width * 0.6;
+    const tipHeight = height * 0.4;
+    const halfTip = tipHeight / 2;
+
+    const topTipY = cy - halfTip;
+    const bottomTipY = cy + halfTip;
+    const barEndX = x + width;
+
+    segments.push({
+      kind: "polygon",
+      role: "taper",
+      points: [
+        { x: taperStartX, y },
+        { x: barEndX, y: topTipY },
+        { x: barEndX, y: bottomTipY },
+        { x: taperStartX, y: y + height },
+      ],
+    });
+
+    return;
+  }
+
+  // --- BEND → kinked centerline polyline ----------------------------------
+  if (opType === "bend") {
+    // Simple three-point kink: straight then up.
+    segments.push({
+      kind: "polyline",
+      role: "bend-centerline",
+      points: [
+        { x, y: cy },
+        { x: x + width * 0.45, y: cy },
+        { x: x + width * 0.8, y: cy - height * 0.8 },
+      ],
+    });
+
+    return;
+  }
+
+  // --- TWIST / SCROLL → diagonal hatch lines ------------------------------
+  if (opType === "twist" || opType === "scroll") {
+    const numLines = 6;
+    const spacing = width / (numLines + 1);
+
+    for (let i = 0; i < numLines; i += 1) {
+      const startX = x + spacing * (i + 0.5);
+      const startY = y;
+      const endX = startX + height * 0.7;
+      const endY = y + height;
+
+      segments.push({
+        kind: "line",
+        role: "twist-hatch",
+        x1: startX,
+        y1: startY,
+        x2: endX,
+        y2: endY,
+      });
+    }
+
+    return;
+  }
+
+  // --- PUNCH / DRIFT → circular hole marker -------------------------------
+  if (opType === "punch" || opType === "drift") {
+    const radius = height * 0.3;
+
+    segments.push({
+      kind: "circle",
+      role: "hole",
+      cx,
+      cy,
+      r: radius,
+    });
+
+    return;
+  }
+
+  // NOTE: For DRAW_OUT / UPSET we rely on the fact that the snapshot itself
+  //       has an updated length/thickness, so the base rectangle already
+  //       appears stretched or compressed. No extra overlay needed here.
+}
+
+/* ------------------------------------------------------------------------- */
+/* Model builder – still 100% backward compatible                            */
+/* ------------------------------------------------------------------------- */
+
 /**
  * Build a normalized drawing model from a Stock-like snapshot.
  *
  * Options:
  *   {
- *     viewBoxWidth?: number  // default 120
- *     viewBoxHeight?: number // default 40
+ *     viewBoxWidth?: number,   // default 120
+ *     viewBoxHeight?: number,  // default 40
+ *
+ *     // Phase 7 (optional, for operation-aware drawing):
+ *     // If provided, the drawing model will add simple symbolic overlays
+ *     // for that operation (taper, bend, twist, etc.).
+ *     operationType?: string,
+ *     operationParams?: object
  *   }
  */
 export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
@@ -157,6 +364,8 @@ export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
   const barX = paddingX;
   const barY = (viewBoxHeight - barHeight) / 2;
 
+  // Always include the base bar rectangle as the first segment so that
+  // older callers (and the before/after overlay helper) continue to work.
   const segments = [
     {
       kind: "rect",
@@ -166,6 +375,48 @@ export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
       height: barHeight,
     },
   ];
+
+  // Phase 7 – operation-aware symbolic overlays.
+  //
+  // We accept hints either via options.* or directly from the snapshot,
+  // but all of this is strictly optional; if no operation information is
+  // available, we simply render the bare bar exactly as before.
+  try {
+    const opTypeFromOptions = options.operationType;
+    const opTypeFromSnapshot =
+      snapshot.operationType ||
+      snapshot.opType ||
+      (snapshot.meta && snapshot.meta.operationType);
+
+    const opParamsFromOptions = options.operationParams;
+    const opParamsFromSnapshot =
+      snapshot.operationParams ||
+      snapshot.params ||
+      (snapshot.meta && snapshot.meta.operationParams) ||
+      {};
+
+    const opInfo = {
+      type: opTypeFromOptions || opTypeFromSnapshot || null,
+      params: opParamsFromOptions || opParamsFromSnapshot || {},
+    };
+
+    if (opInfo.type) {
+      applyOperationStylizationToSegments(segments, {
+        x: barX,
+        y: barY,
+        width: barWidth,
+        height: barHeight,
+      }, opInfo);
+    }
+  } catch (err) {
+    // Defensive: drawing should never break the rest of the app.
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn(
+        "[drawingEngine] Non-fatal error while applying operation stylization",
+        err
+      );
+    }
+  }
 
   return {
     width: viewBoxWidth,
@@ -181,6 +432,81 @@ export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
   };
 }
 
+/* ------------------------------------------------------------------------- */
+/* SVG creation – thumbnails                                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * TODO MAGUS_REVIEW: legacy code commented out by ForgeAI
+ * (reason: kept for reference as the original rect-only renderer before
+ *  Phase 7 added support for polygons, polylines, circles, and lines.)
+ *
+ * export function createBarSvg(model, options = {}) {
+ *   if (!model) {
+ *     // Defensive: create a tiny placeholder SVG
+ *     const placeholder = document.createElementNS(SVG_NS, "svg");
+ *     placeholder.setAttribute("width", "120");
+ *     placeholder.setAttribute("height", "40");
+ *     placeholder.setAttribute("viewBox", "0 0 120 40");
+ *     placeholder.classList.add("step-thumbnail-svg");
+ *     return placeholder;
+ *   }
+ *
+ *   const svgWidth =
+ *     typeof options.width === "number" && options.width > 0
+ *       ? options.width
+ *       : 120;
+ *   const svgHeight =
+ *     typeof options.height === "number" && options.height > 0
+ *       ? options.height
+ *       : 40;
+ *
+ *   const svg = document.createElementNS(SVG_NS, "svg");
+ *   svg.setAttribute("width", String(svgWidth));
+ *   svg.setAttribute("height", String(svgHeight));
+ *   svg.setAttribute("viewBox", `0 0 ${model.width} ${model.height}`);
+ *   svg.setAttribute("role", "img");
+ *
+ *   svg.classList.add("step-thumbnail-svg");
+ *   if (options.cssClass) {
+ *     svg.classList.add(options.cssClass);
+ *   }
+ *
+ *   if (options.title) {
+ *     const titleEl = document.createElementNS(SVG_NS, "title");
+ *     titleEl.textContent = options.title;
+ *     svg.appendChild(titleEl);
+ *   }
+ *
+ *   const segments = Array.isArray(model.segments) ? model.segments : [];
+ *
+ *   segments.forEach((seg) => {
+ *     if (!seg || seg.kind !== "rect") return;
+ *
+ *     const rect = document.createElementNS(SVG_NS, "rect");
+ *     rect.setAttribute("x", String(seg.x));
+ *     rect.setAttribute("y", String(seg.y));
+ *     rect.setAttribute("width", String(seg.width));
+ *     rect.setAttribute("height", String(seg.height));
+ *
+ *     // Slight rounding to make it look more like a bar than a perfect box.
+ *     const rx = Math.min(seg.height / 4, 4);
+ *     rect.setAttribute("rx", String(rx));
+ *     rect.setAttribute("ry", String(rx));
+ *
+ *     // Basic appearance; details can be refined via CSS.
+ *     rect.setAttribute("fill", "none");
+ *     rect.setAttribute("stroke", "currentColor");
+ *     rect.setAttribute("stroke-width", "1.5");
+ *
+ *     rect.classList.add("bar-segment-rect");
+ *     svg.appendChild(rect);
+ *   });
+ *
+ *   return svg;
+ * }
+ */
+
 /**
  * Create an SVGElement representing a simple bar from a drawing model.
  *
@@ -191,6 +517,11 @@ export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
  *     cssClass?: string,   // additional class name, e.g. "step-thumbnail-svg"
  *     title?: string       // optional <title> for accessibility
  *   }
+ *
+ * Phase 7:
+ *   This now understands additional segment kinds (polygon, polyline, line,
+ *   circle) but remains fully backward compatible with the original rect-only
+ *   models.
  */
 export function createBarSvg(model, options = {}) {
   if (!model) {
@@ -232,30 +563,143 @@ export function createBarSvg(model, options = {}) {
   const segments = Array.isArray(model.segments) ? model.segments : [];
 
   segments.forEach((seg) => {
-    if (!seg || seg.kind !== "rect") return;
+    if (!seg || !seg.kind) return;
 
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("x", String(seg.x));
-    rect.setAttribute("y", String(seg.y));
-    rect.setAttribute("width", String(seg.width));
-    rect.setAttribute("height", String(seg.height));
+    // RECT – original behavior (unchanged)
+    if (seg.kind === "rect") {
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("x", String(seg.x));
+      rect.setAttribute("y", String(seg.y));
+      rect.setAttribute("width", String(seg.width));
+      rect.setAttribute("height", String(seg.height));
 
-    // Slight rounding to make it look more like a bar than a perfect box.
-    const rx = Math.min(seg.height / 4, 4);
-    rect.setAttribute("rx", String(rx));
-    rect.setAttribute("ry", String(rx));
+      // Slight rounding to make it look more like a bar than a perfect box.
+      const rx = Math.min(Number(seg.height) / 4 || 0, 4);
+      rect.setAttribute("rx", String(rx));
+      rect.setAttribute("ry", String(rx));
 
-    // Basic appearance; details can be refined via CSS.
-    rect.setAttribute("fill", "none");
-    rect.setAttribute("stroke", "currentColor");
-    rect.setAttribute("stroke-width", "1.5");
+      rect.setAttribute("fill", seg.fill ?? "none");
+      rect.setAttribute("stroke", seg.stroke ?? "currentColor");
+      rect.setAttribute(
+        "stroke-width",
+        seg.strokeWidth != null ? String(seg.strokeWidth) : "1.5"
+      );
 
-    rect.classList.add("bar-segment-rect");
-    svg.appendChild(rect);
+      rect.classList.add("bar-segment-rect");
+      svg.appendChild(rect);
+      return;
+    }
+
+    // POLYGON – tapers / notches
+    if (seg.kind === "polygon") {
+      const ptsArray = Array.isArray(seg.points) ? seg.points : [];
+      if (ptsArray.length < 3) return;
+
+      const polygon = document.createElementNS(SVG_NS, "polygon");
+      const pointsStr = ptsArray
+        .map((p) => `${Number(p.x)},${Number(p.y)}`)
+        .join(" ");
+
+      polygon.setAttribute("points", pointsStr);
+      polygon.setAttribute("fill", seg.fill ?? "none");
+      polygon.setAttribute("stroke", seg.stroke ?? "currentColor");
+      polygon.setAttribute(
+        "stroke-width",
+        seg.strokeWidth != null ? String(seg.strokeWidth) : "1.5"
+      );
+
+      polygon.classList.add("bar-segment-polygon");
+      if (seg.role === "taper") {
+        polygon.classList.add("bar-segment-taper");
+      }
+
+      svg.appendChild(polygon);
+      return;
+    }
+
+    // POLYLINE – bends
+    if (seg.kind === "polyline") {
+      const ptsArray = Array.isArray(seg.points) ? seg.points : [];
+      if (ptsArray.length < 2) return;
+
+      const polyline = document.createElementNS(SVG_NS, "polyline");
+      const pointsStr = ptsArray
+        .map((p) => `${Number(p.x)},${Number(p.y)}`)
+        .join(" ");
+
+      polyline.setAttribute("points", pointsStr);
+      polyline.setAttribute("fill", seg.fill ?? "none");
+      polyline.setAttribute("stroke", seg.stroke ?? "currentColor");
+      polyline.setAttribute(
+        "stroke-width",
+        seg.strokeWidth != null ? String(seg.strokeWidth) : "1.5"
+      );
+
+      polyline.classList.add("bar-segment-polyline");
+      if (seg.role === "bend-centerline") {
+        polyline.classList.add("bar-segment-bend-centerline");
+      }
+
+      svg.appendChild(polyline);
+      return;
+    }
+
+    // LINE – twist / scroll hatch lines
+    if (seg.kind === "line") {
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", String(seg.x1));
+      line.setAttribute("y1", String(seg.y1));
+      line.setAttribute("x2", String(seg.x2));
+      line.setAttribute("y2", String(seg.y2));
+
+      line.setAttribute("fill", seg.fill ?? "none");
+      line.setAttribute("stroke", seg.stroke ?? "currentColor");
+      line.setAttribute(
+        "stroke-width",
+        seg.strokeWidth != null ? String(seg.strokeWidth) : "1"
+      );
+
+      line.classList.add("bar-segment-line");
+      if (seg.role === "twist-hatch") {
+        line.classList.add("bar-segment-twist-hatch");
+      }
+
+      svg.appendChild(line);
+      return;
+    }
+
+    // CIRCLE – hole marker (punch / drift)
+    if (seg.kind === "circle") {
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("cx", String(seg.cx));
+      circle.setAttribute("cy", String(seg.cy));
+      circle.setAttribute("r", String(seg.r));
+
+      circle.setAttribute("fill", seg.fill ?? "none");
+      circle.setAttribute("stroke", seg.stroke ?? "currentColor");
+      circle.setAttribute(
+        "stroke-width",
+        seg.strokeWidth != null ? String(seg.strokeWidth) : "1.5"
+      );
+
+      circle.classList.add("bar-segment-circle");
+      if (seg.role === "hole") {
+        circle.classList.add("bar-segment-hole");
+      }
+
+      svg.appendChild(circle);
+      return;
+    }
+
+    // Unknown segment kinds are ignored, to keep this error-hardened.
   });
 
   return svg;
 }
+
+/* ------------------------------------------------------------------------- */
+/* SVG creation – before / after overlay                                     */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Create an SVG overlay showing "before" vs "after" bar outlines.
