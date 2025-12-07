@@ -15,11 +15,15 @@
   <main class="app-main">
     <!-- Quick Hello / Wiring Check -->
     <section class="card">
-      <h2>ForgeAI Hello</h2>
+      <h2>Hello / Wiring Check</h2>
       <p class="card-intro">
-        Click the button to confirm that the app wiring is working and the JS is loaded.
+        Use this to confirm that JavaScript is wired up correctly.
       </p>
-      <button id="hello-button" class="primary-btn">Say hello</button>
+      <div class="card-actions">
+        <button id="hello-button" class="primary-btn">
+          Say hello
+        </button>
+      </div>
       <p id="hello-output" class="hello-output"></p>
     </section>
 
@@ -27,7 +31,8 @@
     <section class="card">
       <h2>Starting Stock</h2>
       <p class="card-intro">
-        Define your starting bar stock. This is the material you have in hand before forging.
+        Define the bar you are starting from. The app will use this to compute volume
+        and to simulate geometry changes along the bar.
       </p>
 
       <div class="stock-form-grid">
@@ -37,11 +42,11 @@
           <select id="material">
             <option value="">Select material…</option>
             <option value="mild_steel">Mild steel</option>
-            <option value="tool_steel">Tool steel</option>
-            <option value="stainless_steel">Stainless steel</option>
-            <option value="unknown">Unknown / other</option>
+            <option value="medium_steel">Medium carbon steel</option>
+            <option value="high_steel">High carbon steel</option>
+            <option value="other">Other / unknown</option>
           </select>
-          <p id="material-error" class="field-error-message"></p>
+          <p id="stock-material-error" class="field-error-message"></p>
         </div>
 
         <!-- Shape -->
@@ -49,8 +54,8 @@
           <label for="stock-shape">Stock shape</label>
           <select id="stock-shape">
             <option value="">Select shape…</option>
-            <option value="round">Round bar</option>
             <option value="square">Square bar</option>
+            <option value="round">Round bar</option>
             <option value="flat">Flat / rectangular bar</option>
           </select>
           <p id="stock-shape-error" class="field-error-message"></p>
@@ -58,34 +63,28 @@
 
         <!-- Dim A -->
         <div class="field">
-          <label for="dim-a">
-            Dim A
-            <span class="hint">(diameter, or side/thickness)</span>
-          </label>
+          <label for="dim-a">Primary dimension</label>
           <input
             id="dim-a"
             type="number"
             min="0"
             step="0.001"
-            placeholder="e.g. 0.625"
+            placeholder="e.g. 0.625 for 5/8&quot;"
           />
-          <p id="dim-a-error" class="field-error-message"></p>
+          <p id="stock-dim-a-error" class="field-error-message"></p>
         </div>
 
-        <!-- Dim B (only for flat/rectangle) -->
+        <!-- Dim B (optional for square / round) -->
         <div class="field" id="dim-b-wrapper">
-          <label for="dim-b">
-            Dim B
-            <span class="hint">(width, for flat/rectangle)</span>
-          </label>
+          <label for="dim-b">Secondary dimension</label>
           <input
             id="dim-b"
             type="number"
             min="0"
             step="0.001"
-            placeholder="e.g. 1.5"
+            placeholder="e.g. width for flat bar"
           />
-          <p id="dim-b-error" class="field-error-message"></p>
+          <p id="stock-dim-b-error" class="field-error-message"></p>
         </div>
 
         <!-- Length -->
@@ -95,8 +94,8 @@
             id="length"
             type="number"
             min="0"
-            step="0.01"
-            placeholder="e.g. 30"
+            step="0.001"
+            placeholder="e.g. 30 for 30&quot; long bar"
           />
           <p id="stock-length-error" class="field-error-message"></p>
         </div>
@@ -128,8 +127,8 @@
     <section class="card">
       <h2>Target Shape (Manual)</h2>
       <p class="card-intro">
-        Describe the final forged piece. You can define a label, approximate volume,
-        and any notes you want to remember.
+        Describe the final forged piece. For the early phases, we mainly care about a
+        label, approximate volume, and any notes you want to remember.
       </p>
 
       <div class="target-form-grid">
@@ -138,7 +137,7 @@
           <input
             id="target-label"
             type="text"
-            placeholder="e.g. Leaf key fob, S-hook, hammer head"
+            placeholder="e.g. S-hook, leaf keychain, steak flipper"
           />
         </div>
 
@@ -149,14 +148,13 @@
             type="number"
             min="0"
             step="0.001"
-            placeholder="e.g. 2.5"
+            placeholder="0.000"
           />
         </div>
 
         <div class="field">
           <label for="target-units">Volume units</label>
           <select id="target-units">
-            <option value="">Select units…</option>
             <option value="in">Inches³</option>
             <option value="mm">Millimeters³</option>
             <option value="cm">Centimeters³</option>
@@ -164,32 +162,35 @@
         </div>
 
         <div class="field field-span-2">
-          <label for="target-notes">Notes</label>
+          <label for="target-notes">Notes (optional)</label>
           <textarea
             id="target-notes"
             rows="3"
-            placeholder="Describe the shape in smith-friendly terms (tapers, shoulders, transitions, etc.)"
+            placeholder="Any extra description – tapers, scrolls, twists, holes, etc."
           ></textarea>
         </div>
       </div>
 
       <div class="card-actions">
         <button id="target-set-btn" class="primary-btn">
-          Set manual target
+          Set manual target shape
         </button>
       </div>
 
       <p id="target-error" class="card-error"></p>
-      <div id="target-summary" class="stock-summary"></div>
-      <div id="target-compare" class="target-compare"></div>
+
+      <div class="target-summary-layout">
+        <div id="target-summary" class="stock-summary"></div>
+        <div id="target-compare" class="stock-summary"></div>
+      </div>
     </section>
 
-    <!-- Target Shape (CAD/STL) -->
+    <!-- Target Shape (STL / CAD Import) -->
     <section class="card">
-      <h2>Target Shape (CAD / STL Import)</h2>
+      <h2>Target Shape (STL Import)</h2>
       <p class="card-intro">
-        Optionally import a simple triangle mesh (STL) of your target shape. The app
-        will estimate volume and show a very minimal spinning preview.
+        Import a simple STL mesh as the target shape. The app extracts a volume and
+        bounding box to compare against your starting stock.
       </p>
 
       <div class="cad-form-grid">
@@ -216,11 +217,20 @@
             placeholder="e.g. CAD model from Fusion"
           />
         </div>
+
+        <div class="field field-span-2">
+          <label for="cad-notes">Notes (optional)</label>
+          <textarea
+            id="cad-notes"
+            rows="3"
+            placeholder="Optional short description of what this CAD file represents."
+          ></textarea>
+        </div>
       </div>
 
       <div class="card-actions">
         <button id="cad-load-btn" class="primary-btn">
-          Load STL as target
+          Import STL as target
         </button>
       </div>
 
@@ -243,7 +253,8 @@
       <h2>Forging Steps</h2>
       <p class="card-intro">
         Add the major forging operations you plan to perform. The volume budget panel
-        will help you see whether your plan matches the material you have.
+        will help you see whether your plan matches the material you have.<br />
+        Phase 8 adds an experimental planner that can generate a full step plan for you.
       </p>
 
       <div class="steps-form-grid">
@@ -261,35 +272,33 @@
           <input
             id="steps-param-length"
             type="text"
-            placeholder="e.g. 4&quot; tip, 2&quot; near the eye"
+            placeholder="e.g. 3&quot; at tip, 4&quot; middle, etc."
           />
         </div>
 
-        <!-- Optional location parameter -->
+        <!-- Optional location / direction parameter -->
         <div class="field">
-          <label for="steps-param-location">Location on bar (optional)</label>
+          <label for="steps-param-location">Location / direction (optional)</label>
           <input
             id="steps-param-location"
             type="text"
-            placeholder="e.g. 3&quot; from one end, center section"
+            placeholder="e.g. near tip, mid-bar, at shoulder…"
           />
         </div>
 
-        <!-- Description (user text) -->
+        <!-- Description -->
         <div class="field field-span-2">
-          <label for="step-description">Description (optional)</label>
+          <label for="step-description">Short description</label>
           <textarea
             id="step-description"
             rows="2"
-            placeholder="e.g. Taper last 4&quot; from 5/8&quot; square to 1/4&quot; square"
+            placeholder="e.g. Draw out last 4&quot; to a taper"
           ></textarea>
         </div>
 
         <!-- Volume delta -->
         <div class="field">
-          <label id="steps-volume-delta-label" for="step-delta-volume">
-            Volume change (optional)
-          </label>
+          <label for="step-delta-volume" id="steps-volume-delta-label">ΔV</label>
           <input
             id="step-delta-volume"
             type="number"
@@ -321,6 +330,9 @@
         <button id="steps-clear-btn" class="secondary-btn">
           Clear all steps
         </button>
+        <button id="steps-autoplan-btn" class="secondary-btn">
+          Generate forging plan
+        </button>
       </div>
 
       <p id="steps-error" class="card-error"></p>
@@ -329,7 +341,7 @@
       <div id="step-preview-panel" class="step-preview-panel">
         <h3 class="step-preview-title">Step preview (before/after)</h3>
         <p class="step-preview-placeholder">
-          Click a step to see a simplified before/after outline of the bar here.
+          Click or hover a step to see a simplified before/after outline of the bar here.
         </p>
       </div>
       <div id="steps-volume-summary" class="stock-summary"></div>
@@ -370,8 +382,8 @@
         <li>✅ Phase 5: App state, constraints, and heuristic preview</li>
         <li>✅ Phase 6: CAD/STL import and spinning preview</li>
         <li>⬜ Phase 7: Storyboard drawings &amp; thumbnails</li>
-        <li>⬜ Phase 8: Local save/load &amp; sharing</li>
-        <li>⬜ Phase 9: Advanced heuristics &amp; AI-assisted planning</li>
+        <li>⬜ Phase 8: Autonomous forging planner (this page)</li>
+        <li>⬜ Phase 9: Local save/load &amp; sharing</li>
       </ul>
     </section>
   </main>

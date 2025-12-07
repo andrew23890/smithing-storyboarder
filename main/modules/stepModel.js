@@ -1,6 +1,6 @@
 // main/modules/stepModel.js
 //
-// Data model for forge steps (Roadmap Phase 5 + Phase 6).
+// Data model for forge steps (Roadmap Phase 5 + Phase 6 + Phase 8).
 //
 // Responsibilities:
 // - Represent a single forge step (ForgeStep)
@@ -10,6 +10,7 @@
 // - Store volume-conservation checks per step
 // - Store physical-feasibility / constraint checks per step (Phase 6)
 // - Provide a summary helper for the entire step list
+// - Phase 8: carry planner diagnostics / metadata for autonomous plans
 //
 // Heuristic-specific logic (volume estimates, notes, etc.) lives in
 // operationLogic.js. This module just consumes those helpers.
@@ -254,6 +255,11 @@ export class ForgeStep {
     this.constraintErrors = [];   // array of short strings
     this.feasibilityStatus = null; // "ok" | "aggressive" | "implausible" | null
 
+    // Phase 8: planner / autonomous system metadata
+    // These are optional and safe for older UIs to ignore.
+    this.plannerDiagnostics = null;
+    this.plannerMeta = null;
+
     // Cached summary (can be recomputed by calling buildStepSummary(this)).
     this.summary = buildStepSummary(this);
   }
@@ -382,6 +388,9 @@ export class ForgeStep {
       constraintWarnings: this.constraintWarnings,
       constraintErrors: this.constraintErrors,
       feasibilityStatus: this.feasibilityStatus,
+      // Phase 8 additions:
+      plannerDiagnostics: this.plannerDiagnostics,
+      plannerMeta: this.plannerMeta,
     };
   }
 
@@ -455,6 +464,15 @@ export class ForgeStep {
       if (fs === "ok" || fs === "aggressive" || fs === "implausible") {
         step.feasibilityStatus = fs;
       }
+    }
+
+    // Phase 8: rehydrate planner metadata if present.
+    if (data.plannerDiagnostics) {
+      // Shallow clone to avoid accidental shared references.
+      step.plannerDiagnostics = { ...data.plannerDiagnostics };
+    }
+    if (data.plannerMeta) {
+      step.plannerMeta = { ...data.plannerMeta };
     }
 
     return step;
