@@ -1,0 +1,708 @@
+// main/modules/forgeStepSchema.js
+//
+// Phase 8 – ForgeStep schema metadata for autonomous planning.
+//
+// This module does NOT change the ForgeStep class itself. Instead, it
+// provides a central, declarative description of:
+//   - Which parameters each operation type may use
+//   - How those parameters relate to axes / length / cross-section
+//   - Which parameters are “axial” vs “local cross-section”
+//   - Human-friendly labels and hints
+//
+// This keeps Phase 8 planner logic (planner.js) and any future UI helpers
+// from hard-coding magic strings all over the codebase.
+//
+// Safe usage:
+//   - Existing code can ignore this module entirely.
+//   - New code (planner, Form UIs, etc.) can import and consult it.
+//
+// Exports:
+//   - OPERATION_PARAM_SCHEMAS
+//   - getOperationParamSchema(operationType)
+//   - describeOperationParams(operationType)
+//
+// NOTE:
+//   This is intentionally descriptive, not prescriptive. It does not
+//   validate, clamp, or coerce values; that logic continues to live in
+//   operationLogic.js, constraintsEngine.js, and stepModel.js.
+//
+
+import { FORGE_OPERATION_TYPES } from "./operations.js";
+
+/**
+ * Shared building blocks for common concepts.
+ */
+
+const AXIAL_FIELDS = {
+  positionAlongLength: {
+    id: "positionAlongLength",
+    label: "Position along length",
+    description:
+      "Where along the bar length this operation is centered (0 = near handle end, 1 = tip end).",
+    type: "number",
+    uiRole: "slider_0_1",
+    min: 0,
+    max: 1,
+    semantics: "axial_fraction",
+  },
+  regionLength: {
+    id: "regionLength",
+    label: "Region length",
+    description:
+      "Approximate length of bar region affected by this operation.",
+    type: "number",
+    uiRole: "length",
+    semantics: "axial_physical_length",
+  },
+};
+
+const SECTION_FIELDS = {
+  targetThickness: {
+    id: "targetThickness",
+    label: "Target thickness",
+    description:
+      "Approximate target thickness in the thinnest direction after this step.",
+    type: "number",
+    uiRole: "thickness",
+    semantics: "section_min_thickness",
+  },
+  targetWidth: {
+    id: "targetWidth",
+    label: "Target width",
+    description:
+      "Approximate width in the widest direction after this step.",
+    type: "number",
+    uiRole: "width",
+    semantics: "section_max_width",
+  },
+};
+
+const GENERIC_FIELDS = {
+  description: {
+    id: "description",
+    label: "Planner note",
+    description:
+      "Human-readable note about what this step is accomplishing.",
+    type: "string",
+    uiRole: "multiline_text",
+  },
+  units: {
+    id: "units",
+    label: "Units",
+    description:
+      "Units for any length-like parameters (should match stock units).",
+    type: "string",
+    uiRole: "units_select",
+  },
+  massChangeTypeOverride: {
+    id: "massChangeTypeOverride",
+    label: "Mass change classification (override)",
+    description:
+      "Planner hint: how this step affects mass (conserved / removed / added). Existing logic may recompute.",
+    type: "string",
+    uiRole: "enum",
+    semantics: "mass_change_hint",
+  },
+};
+
+/**
+ * OPERATION_PARAM_SCHEMAS
+ *
+ * Each entry describes the semantic parameters for a particular operation.
+ *
+ * Schema shape:
+ *   OPERATION_PARAM_SCHEMAS[type] = {
+ *     operationType,
+ *     label,
+ *     description,
+ *     axialImpact: "none" | "local" | "global",
+ *     sectionImpact: "none" | "local" | "global",
+ *     params: [
+ *       {
+ *         id,
+ *         label,
+ *         description,
+ *         type,
+ *         uiRole,
+ *         required,
+ *         semantics,
+ *         min,
+ *         max,
+ *         enumValues,
+ *       },
+ *       ...
+ *     ],
+ *   }
+ */
+
+export const OPERATION_PARAM_SCHEMAS = {
+  /* ----------------------------------------------------------------------- */
+  /* Volume-conserving-ish shape changes                                     */
+  /* ----------------------------------------------------------------------- */
+
+  [FORGE_OPERATION_TYPES.DRAW_OUT]: {
+    operationType: FORGE_OPERATION_TYPES.DRAW_OUT,
+    label: "Draw out",
+    description:
+      "Lengthen a region of the bar, thinning it while conserving mass.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      AXIAL_FIELDS.regionLength,
+      {
+        id: "startLength",
+        label: "Initial region length",
+        description: "Length of the region before drawing out.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_physical_length_before",
+      },
+      {
+        id: "targetLength",
+        label: "Target region length",
+        description: "Length of the region after drawing out.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_physical_length_after",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.TAPER]: {
+    operationType: FORGE_OPERATION_TYPES.TAPER,
+    label: "Taper",
+    description:
+      "Gradually reduce cross-section toward the tip over a region of the bar.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      AXIAL_FIELDS.regionLength,
+      SECTION_FIELDS.targetThickness,
+      {
+        id: "taperProfile",
+        label: "Taper profile",
+        description:
+          "Overall profile of the taper (linear, convex, concave).",
+        type: "string",
+        uiRole: "enum",
+        semantics: "taper_profile",
+        enumValues: ["linear", "convex", "concave"],
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.UPSET]: {
+    operationType: FORGE_OPERATION_TYPES.UPSET,
+    label: "Upset",
+    description:
+      "Shorten and thicken a region of the bar while conserving mass.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      AXIAL_FIELDS.regionLength,
+      {
+        id: "shortenAmount",
+        label: "Shorten amount",
+        description: "Approximate amount by which the region shortens.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_shorten_amount",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.BEND]: {
+    operationType: FORGE_OPERATION_TYPES.BEND,
+    label: "Bend",
+    description:
+      "Introduce a bend in the bar around some radius and angle.",
+    axialImpact: "local",
+    sectionImpact: "none",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.positionAlongLength,
+      {
+        id: "insideRadius",
+        label: "Inside bend radius",
+        description:
+          "Radius of the bend measured at the inside of the bar.",
+        type: "number",
+        uiRole: "radius",
+        semantics: "bend_inside_radius",
+      },
+      {
+        id: "angleDegrees",
+        label: "Bend angle (deg)",
+        description: "Angle of the bend in degrees.",
+        type: "number",
+        uiRole: "angle_degrees",
+        semantics: "bend_angle",
+      },
+      {
+        id: "plane",
+        label: "Bend plane",
+        description: "Plane in which the bar is bent.",
+        type: "string",
+        uiRole: "enum",
+        semantics: "bend_plane",
+        enumValues: ["x-y", "x-z", "y-z", "unspecified"],
+      },
+      {
+        id: "location",
+        label: "Location descriptor",
+        description:
+          "Human-friendly location (e.g., near_tip, center_section, near_handle).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "axial_location_hint",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.SCROLL]: {
+    operationType: FORGE_OPERATION_TYPES.SCROLL,
+    label: "Scroll",
+    description: "Create a decorative scroll / spiral at the bar end.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      {
+        id: "scrollDiameter",
+        label: "Scroll diameter",
+        description: "Approximate diameter of the finished scroll.",
+        type: "number",
+        uiRole: "diameter",
+        semantics: "scroll_diameter",
+      },
+      {
+        id: "turns",
+        label: "Number of turns",
+        description: "Number of turns in the scroll (e.g. 0.75, 1.25).",
+        type: "number",
+        uiRole: "turns",
+        semantics: "scroll_turns",
+      },
+      {
+        id: "location",
+        label: "Location",
+        description: "Where the scroll is formed (usually at the tip).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "axial_location_hint",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.TWIST]: {
+    operationType: FORGE_OPERATION_TYPES.TWIST,
+    label: "Twist",
+    description: "Twist a region of the bar around its longitudinal axis.",
+    axialImpact: "local",
+    sectionImpact: "none",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.regionLength,
+      {
+        id: "turns",
+        label: "Turns",
+        description:
+          "Number of full turns applied to the twisted region.",
+        type: "number",
+        uiRole: "turns",
+        semantics: "twist_turns",
+      },
+      {
+        id: "axis",
+        label: "Twist axis",
+        description: "Axis around which the twist is applied.",
+        type: "string",
+        uiRole: "enum",
+        semantics: "twist_axis",
+        enumValues: ["longitudinal"],
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.FULLER]: {
+    operationType: FORGE_OPERATION_TYPES.FULLER,
+    label: "Fuller",
+    description:
+      "Add a groove or fuller to move material and change profile.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.regionLength,
+      {
+        id: "grooveDepth",
+        label: "Groove depth",
+        description: "Approximate depth of the fuller groove.",
+        type: "number",
+        uiRole: "depth",
+        semantics: "fuller_depth",
+      },
+      {
+        id: "grooveWidth",
+        label: "Groove width",
+        description: "Approximate width of the fuller groove.",
+        type: "number",
+        uiRole: "width",
+        semantics: "fuller_width",
+      },
+      {
+        id: "face",
+        label: "Face",
+        description: "Which face of the bar the fuller is on.",
+        type: "string",
+        uiRole: "enum",
+        semantics: "section_face",
+        enumValues: ["flat_side", "edge", "unspecified"],
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.SECTION_CHANGE]: {
+    operationType: FORGE_OPERATION_TYPES.SECTION_CHANGE,
+    label: "Section change",
+    description:
+      "Change bar cross-section (e.g. square to round or octagon).",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.regionLength,
+      {
+        id: "fromSection",
+        label: "From section",
+        description: "Original cross-section (e.g. square, round, flat).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "section_type_from",
+      },
+      {
+        id: "toSection",
+        label: "To section",
+        description: "Target cross-section (e.g. round, octagon).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "section_type_to",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.FLATTEN]: {
+    operationType: FORGE_OPERATION_TYPES.FLATTEN,
+    label: "Flatten",
+    description:
+      "Flatten a region of the bar, spreading material wider and thinner.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.regionLength,
+      SECTION_FIELDS.targetThickness,
+      SECTION_FIELDS.targetWidth,
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.STRAIGHTEN]: {
+    operationType: FORGE_OPERATION_TYPES.STRAIGHTEN,
+    label: "Straighten",
+    description:
+      "Remove unintended bends or kinks, returning the bar closer to straight.",
+    axialImpact: "global",
+    sectionImpact: "none",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+    ],
+  },
+
+  /* ----------------------------------------------------------------------- */
+  /* Volume-removing operations                                              */
+  /* ----------------------------------------------------------------------- */
+
+  [FORGE_OPERATION_TYPES.CUT]: {
+    operationType: FORGE_OPERATION_TYPES.CUT,
+    label: "Cut off",
+    description: "Cut off a section of bar, removing material.",
+    axialImpact: "local",
+    sectionImpact: "none",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      {
+        id: "removedLength",
+        label: "Removed length",
+        description: "Length of bar removed by this cut.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_removed_length",
+      },
+      {
+        id: "location",
+        label: "Where is the cut?",
+        description:
+          "Human-friendly location (tip, tail, center, between features).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "axial_location_hint",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.TRIM]: {
+    operationType: FORGE_OPERATION_TYPES.TRIM,
+    label: "Trim",
+    description: "Remove a small amount of material to refine shape.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      {
+        id: "length",
+        label: "Trimmed length or perimeter",
+        description:
+          "Approximate linear amount of material removed (edge or end).",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_or_perimeter_trim",
+      },
+      {
+        id: "face",
+        label: "Where is the trim?",
+        description: "Edge, face, or tip being trimmed.",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "section_face",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.SLIT]: {
+    operationType: FORGE_OPERATION_TYPES.SLIT,
+    label: "Slit",
+    description:
+      "Create a slit into the bar that can be opened into a split/fork.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      {
+        id: "slitLength",
+        label: "Slit length",
+        description: "Length of the slit into the bar.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_slit_length",
+      },
+      {
+        id: "location",
+        label: "Slit location",
+        description: "Where the slit is cut (usually at tip).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "axial_location_hint",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.SPLIT]: {
+    operationType: FORGE_OPERATION_TYPES.SPLIT,
+    label: "Split",
+    description: "Open an existing slit into two (or more) legs.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      {
+        id: "spreadAngleDegrees",
+        label: "Spread angle (deg)",
+        description: "Approximate angle between the split legs.",
+        type: "number",
+        uiRole: "angle_degrees",
+        semantics: "split_spread_angle",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.PUNCH]: {
+    operationType: FORGE_OPERATION_TYPES.PUNCH,
+    label: "Punch",
+    description: "Punch a hole or depression in the bar.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      AXIAL_FIELDS.positionAlongLength,
+      {
+        id: "holeDiameter",
+        label: "Hole diameter",
+        description: "Diameter of the punched hole.",
+        type: "number",
+        uiRole: "diameter",
+        semantics: "hole_diameter",
+      },
+      {
+        id: "holeDepth",
+        label: "Hole depth",
+        description: "Depth of hole (through bar thickness for through-holes).",
+        type: "number",
+        uiRole: "depth",
+        semantics: "hole_depth",
+      },
+      {
+        id: "face",
+        label: "Which face?",
+        description: "Which face is punched (flat, edge, specific reference).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "section_face",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.DRIFT]: {
+    operationType: FORGE_OPERATION_TYPES.DRIFT,
+    label: "Drift",
+    description: "Enlarge or shape a previously punched hole.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      AXIAL_FIELDS.positionAlongLength,
+      {
+        id: "targetDiameter",
+        label: "Target hole diameter",
+        description: "Final diameter of the drifted hole.",
+        type: "number",
+        uiRole: "diameter",
+        semantics: "hole_diameter_target",
+      },
+      AXIAL_FIELDS.regionLength,
+    ],
+  },
+
+  /* ----------------------------------------------------------------------- */
+  /* Volume-adding operations                                                */
+  /* ----------------------------------------------------------------------- */
+
+  [FORGE_OPERATION_TYPES.WELD]: {
+    operationType: FORGE_OPERATION_TYPES.WELD,
+    label: "Weld",
+    description: "Forge weld additional stock onto the bar.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      {
+        id: "addedLength",
+        label: "Added length",
+        description: "Approximate length of stock added via weld.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_added_length",
+      },
+      {
+        id: "location",
+        label: "Weld location",
+        description:
+          "Where the weld occurs (tip, mid-bar, junction between features).",
+        type: "string",
+        uiRole: "enum_or_free",
+        semantics: "axial_location_hint",
+      },
+    ],
+  },
+
+  [FORGE_OPERATION_TYPES.COLLAR]: {
+    operationType: FORGE_OPERATION_TYPES.COLLAR,
+    label: "Collar / Wrap",
+    description:
+      "Wrap a collar around the bar; may add material and local stiffness.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+      AXIAL_FIELDS.positionAlongLength,
+      {
+        id: "collarLength",
+        label: "Collar length",
+        description:
+          "Axial length of the collar along the bar after setting.",
+        type: "number",
+        uiRole: "length",
+        semantics: "axial_collar_length",
+      },
+    ],
+  },
+
+  /* ----------------------------------------------------------------------- */
+  /* Generic / catch-all                                                     */
+  /* ----------------------------------------------------------------------- */
+
+  [FORGE_OPERATION_TYPES.FORGE]: {
+    operationType: FORGE_OPERATION_TYPES.FORGE,
+    label: "General forging step",
+    description:
+      "Catch-all forging operation when a more specific type is not chosen.",
+    axialImpact: "local",
+    sectionImpact: "local",
+    params: [
+      GENERIC_FIELDS.description,
+      GENERIC_FIELDS.units,
+      GENERIC_FIELDS.massChangeTypeOverride,
+    ],
+  },
+};
+
+/**
+ * Lookup helpers
+ */
+
+export function getOperationParamSchema(operationType) {
+  if (!operationType) return null;
+  return OPERATION_PARAM_SCHEMAS[operationType] || null;
+}
+
+export function describeOperationParams(operationType) {
+  const schema = getOperationParamSchema(operationType);
+  if (!schema) {
+    return {
+      operationType,
+      label: "Unknown operation",
+      description: "No schema defined.",
+      params: [],
+    };
+  }
+  return schema;
+}
