@@ -8,7 +8,7 @@
 //
 //   - Axes & regions (longitudinal, transverse, face)
 //   - Canonical parameter keys (lengthRegion, location, etc.)
-//   - Mass-change expectations (conserved / added / removed)
+//   - Mass-change expectations (conserved / added / removed / mixed)
 //   - Hints for planner / geometry / UI
 //
 // Nothing in the existing app depends on this module yet, so it is
@@ -651,6 +651,45 @@ const SCHEMA = {
       "General straightening / truing operation. Adjusts bends and kinks without intentional volume change.",
   },
 
+  // NEW in this version: SETDOWN is now given explicit semantics so the planner
+  // and LLM backend know how to reason about shoulders/steps.
+  [FORGE_OPERATION_TYPES.SETDOWN]: {
+    id: FORGE_OPERATION_TYPES.SETDOWN,
+    primaryAxis: "length",
+    typicalMassChange: "conserved",
+    longitudinal: {
+      hasRegion: true,
+      regionParams: ["lengthRegion"],
+      locationParams: ["location", "distanceFromEnd"],
+    },
+    crossSection: {
+      affectsCrossSection: true,
+      parameters: ["stepDepth", "stepLength"],
+    },
+    rotation: {
+      hasTwist: false,
+      parameters: [],
+    },
+    face: {
+      usesFace: true,
+      parameters: ["face"], // e.g. "edge", "flat_side"
+    },
+    paramHints: {
+      required: ["lengthRegion"],
+      optional: [
+        "location",
+        "distanceFromEnd",
+        "stepDepth",
+        "stepLength",
+        "face",
+        "volumeDeltaOverride",
+      ],
+    },
+    notes:
+      "Creates a shoulder / step-down in the bar by driving material down over an anvil edge or tool, " +
+      "thickening one side and thinning the adjacent region.",
+  },
+
   [FORGE_OPERATION_TYPES.SECTION_CHANGE]: {
     id: FORGE_OPERATION_TYPES.SECTION_CHANGE,
     primaryAxis: "length",
@@ -685,6 +724,8 @@ const SCHEMA = {
       "Describes a transition between cross-section types (e.g., square to round) over a region.",
   },
 
+  // NOTE: FORGE is a generic catch-all that may not exist as a distinct
+  // operationType in all code paths. Keeping it here for future use.
   [FORGE_OPERATION_TYPES.FORGE]: {
     id: FORGE_OPERATION_TYPES.FORGE,
     primaryAxis: "generic",

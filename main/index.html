@@ -63,9 +63,9 @@
 
         <!-- Dim A -->
         <div class="field">
-          <label for="dim-a">Primary dimension</label>
+          <label for="stock-dimA">Primary dimension</label>
           <input
-            id="dim-a"
+            id="stock-dimA"
             type="number"
             min="0"
             step="0.001"
@@ -75,10 +75,10 @@
         </div>
 
         <!-- Dim B (optional for square / round) -->
-        <div class="field" id="dim-b-wrapper">
-          <label for="dim-b">Secondary dimension</label>
+        <div class="field" id="stock-dimB-wrapper">
+          <label for="stock-dimB">Secondary dimension</label>
           <input
-            id="dim-b"
+            id="stock-dimB"
             type="number"
             min="0"
             step="0.001"
@@ -89,9 +89,9 @@
 
         <!-- Length -->
         <div class="field">
-          <label for="length">Length</label>
+          <label for="stock-length">Length</label>
           <input
-            id="length"
+            id="stock-length"
             type="number"
             min="0"
             step="0.001"
@@ -114,7 +114,7 @@
       </div>
 
       <div class="card-actions">
-        <button id="stock-set-btn" class="primary-btn">
+        <button id="stock-submit" class="primary-btn">
           Set starting stock
         </button>
       </div>
@@ -138,6 +138,40 @@
             id="target-label"
             type="text"
             placeholder="e.g. S-hook, leaf keychain, steak flipper"
+          />
+        </div>
+
+        <!-- Optional dimensions (used by setupTargetShapeForm in main.js) -->
+        <div class="field">
+          <label for="target-length">Approx. length (optional)</label>
+          <input
+            id="target-length"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. overall length"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-width">Approx. width (optional)</label>
+          <input
+            id="target-width"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. widest part"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-thickness">Approx. thickness (optional)</label>
+          <input
+            id="target-thickness"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. thickest section"
           />
         </div>
 
@@ -172,7 +206,7 @@
       </div>
 
       <div class="card-actions">
-        <button id="target-set-btn" class="primary-btn">
+        <button id="target-submit" class="primary-btn">
           Set manual target shape
         </button>
       </div>
@@ -229,7 +263,7 @@
       </div>
 
       <div class="card-actions">
-        <button id="cad-load-btn" class="primary-btn">
+        <button id="cad-import-button" class="primary-btn">
           Import STL as target
         </button>
       </div>

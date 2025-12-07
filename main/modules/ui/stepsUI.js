@@ -464,7 +464,13 @@ export function renderStepsList(appState, listEl, options = {}) {
     if (typeof onDeleteStep === "function") {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
-      deleteBtn.className = "steps-list-delete-button";
+      // NOTE MAGUS_REVIEW:
+      // - Keep original "steps-list-delete-button" for your CSS.
+      // - Add "steps-list-item-delete-button" so main.js hover/click
+      //   preview logic can recognize this as the delete button and
+      //   avoid triggering previews when it's clicked/hovered.
+      deleteBtn.className =
+        "steps-list-delete-button steps-list-item-delete-button";
       deleteBtn.textContent = "Delete step";
       deleteBtn.addEventListener("click", () => {
         onDeleteStep(step, index);
