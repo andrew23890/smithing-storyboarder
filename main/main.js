@@ -58,7 +58,10 @@ import {
   createBeforeAfterOverlaySvg,
 } from "./modules/drawingEngine.js";
 
-import { autoPlan } from "./modules/planner.js";
+// NOTE MAGUS: planner.js now exports autoPlanWithLLM (async) and autoPlan (sync)
+// We keep both imports, but the UI uses autoPlanWithLLM so it can fall back
+// to heuristics if no LLM backend is configured.
+import { autoPlan, autoPlanWithLLM } from "./modules/planner.js";
 
 /* -------------------------------------------------------------------------- */
 /* HELLO BUTTON                                                               */
@@ -119,6 +122,10 @@ function refreshStepsUI() {
     onDeleteStep: (step) => {
       if (!step || !step.id) return;
       removeStep(step.id);
+
+      // Phase 5/7: ensure geometry + snapshots stay in sync for thumbnails
+      recomputeTimeline();
+
       refreshStepsUI();
       refreshTargetUI();
     },
@@ -258,11 +265,14 @@ const STOCK_SHAPE_CONFIG = {
   },
 };
 
+// NOTE MAGUS: index.html now uses ids "dim-a" / "dim-b" and wrapper "dim-b-wrapper".
+// The original version looked for stock-dimA / stock-dimB; that no longer exists.
+// We keep the logic but align it with the current DOM.
 function updateStockFormForShape(shape) {
-  const dimALabel = document.querySelector('label[for="stock-dimA"]');
-  const dimBLabel = document.querySelector('label[for="stock-dimB"]');
-  const dimBWrapper = document.getElementById("stock-dimB-wrapper");
-  const dimBInput = document.getElementById("stock-dimB");
+  const dimALabel = document.querySelector('label[for="dim-a"]');
+  const dimBLabel = document.querySelector('label[for="dim-b"]');
+  const dimBWrapper = document.getElementById("dim-b-wrapper");
+  const dimBInput = document.getElementById("dim-b");
 
   const config = STOCK_SHAPE_CONFIG[shape] || STOCK_SHAPE_CONFIG.square;
 
@@ -288,11 +298,12 @@ function setupStockForm() {
   console.log("[Stock] Setting up stock form…");
 
   const shapeSelect = document.getElementById("stock-shape");
-  const dimAInput = document.getElementById("stock-dimA");
-  const dimBInput = document.getElementById("stock-dimB");
-  const lengthInput = document.getElementById("stock-length");
+  // NOTE: align with index.html ids: dim-a, dim-b, length, stock-units, stock-set-btn
+  const dimAInput = document.getElementById("dim-a");
+  const dimBInput = document.getElementById("dim-b");
+  const lengthInput = document.getElementById("length");
   const unitsSelect = document.getElementById("stock-units");
-  const submitButton = document.getElementById("stock-submit");
+  const submitButton = document.getElementById("stock-set-btn");
   const errorEl = document.getElementById("stock-error");
 
   if (
@@ -303,7 +314,7 @@ function setupStockForm() {
     !submitButton
   ) {
     console.error(
-      "[Stock] Missing one or more stock form elements (shape, dimA, length, units, submit)."
+      "[Stock] Missing one or more stock form elements (shape, dim-a, length, units, submit)."
     );
     return;
   }
@@ -389,6 +400,11 @@ function setupStockForm() {
       });
 
       setStartingStock(stock);
+
+      // IMPORTANT: keep geometry + volume summary up to date so
+      // step thumbnails & before/after previews work.
+      recomputeTimeline();
+
       refreshStockUI();
       refreshTargetUI();
       refreshStepsUI();
@@ -413,7 +429,10 @@ function setupCadImport() {
 
   const fileInput = document.getElementById("cad-file");
   const unitsSelect = document.getElementById("cad-units");
-  const importButton = document.getElementById("cad-import-button");
+  // NOTE: index.html uses id="cad-load-btn"
+  const importButton = document.getElementById("cad-load-btn");
+  const labelInput = document.getElementById("cad-label");
+  const notesInput = document.getElementById("cad-notes");
   const errorEl = document.getElementById("cad-error");
 
   if (!fileInput || !unitsSelect || !importButton) {
@@ -423,10 +442,13 @@ function setupCadImport() {
 
   importButton.addEventListener("click", async (evt) => {
     evt.preventDefault();
+    // We reuse target error helpers for the CAD card error element.
     clearTargetError(errorEl);
 
     const file = fileInput.files && fileInput.files[0];
     const units = unitsSelect.value || "in";
+    const label = (labelInput && labelInput.value.trim()) || "";
+    const notes = (notesInput && notesInput.value.trim()) || "";
 
     if (!file) {
       showTargetError("Please choose an STL file to import.", errorEl);
@@ -445,7 +467,20 @@ function setupCadImport() {
       }
 
       const target = TargetShape.fromStlMetadata(parsed, units);
+
+      // Apply optional label/notes from the form if provided.
+      if (label) {
+        target.label = label;
+      }
+      if (notes) {
+        target.notes = notes;
+      }
+
       setTargetShape(target);
+
+      // Keep geometry & volume summary in sync
+      recomputeTimeline();
+
       refreshTargetUI();
       refreshStepsUI();
 
@@ -464,29 +499,29 @@ function setupCadImport() {
 /* MANUAL TARGET SHAPE FORM                                                   */
 /* -------------------------------------------------------------------------- */
 
+// NOTE MAGUS: index.html now has a simpler manual target:
+//   - target-label
+//   - target-volume
+//   - target-units
+//   - target-notes
+//   - target-set-btn
+// The previous version expected length/width/thickness/volume and target-submit.
+// That DOM no longer exists, so that code would never run. We keep the
+// spirit but align to the current HTML.
+
 function setupTargetShapeForm() {
   console.log("[Target] Setting up manual target shape form…");
 
-  const lengthInput = document.getElementById("target-length");
-  const widthInput = document.getElementById("target-width");
-  const thicknessInput = document.getElementById("target-thickness");
-  const targetVolumeInput = document.getElementById("target-volume");
-  const unitsSelect = document.getElementById("target-units");
   const labelInput = document.getElementById("target-label");
+  const volumeInput = document.getElementById("target-volume");
+  const unitsSelect = document.getElementById("target-units");
   const notesInput = document.getElementById("target-notes");
-  const submitButton = document.getElementById("target-submit");
+  const submitButton = document.getElementById("target-set-btn");
   const errorEl = document.getElementById("target-error");
 
-  if (
-    !lengthInput ||
-    !widthInput ||
-    !thicknessInput ||
-    !targetVolumeInput ||
-    !unitsSelect ||
-    !submitButton
-  ) {
+  if (!labelInput || !volumeInput || !unitsSelect || !notesInput || !submitButton) {
     console.error(
-      "[Target] Missing one or more manual target shape form elements."
+      "[Target] Missing one or more manual target shape form elements (label, volume, units, notes, button)."
     );
     return;
   }
@@ -512,30 +547,14 @@ function setupTargetShapeForm() {
     evt.preventDefault();
     clearTargetError(errorEl);
 
-    lengthInput.classList.remove("field-error");
-    widthInput.classList.remove("field-error");
-    thicknessInput.classList.remove("field-error");
-    targetVolumeInput.classList.remove("field-error");
+    volumeInput.classList.remove("field-error");
 
-    const length = parseOptionalPositiveNumber(lengthInput, "Length");
-    const width = parseOptionalPositiveNumber(widthInput, "Width");
-    const thickness = parseOptionalPositiveNumber(
-      thicknessInput,
-      "Thickness"
-    );
-    const volume = parseOptionalPositiveNumber(
-      targetVolumeInput,
-      "Target volume"
-    );
+    const volume = parseOptionalPositiveNumber(volumeInput, "Target volume");
     const units = unitsSelect.value || "in";
     const label = labelInput.value.trim() || "Manual target shape";
     const notes = notesInput.value.trim() || "";
 
-    if (
-      [length, width, thickness, volume].some(
-        (v) => v !== null && !Number.isFinite(v)
-      )
-    ) {
+    if (volume !== null && !Number.isFinite(volume)) {
       showTargetError(
         "Please correct errors in the highlighted fields before setting target shape.",
         errorEl
@@ -544,10 +563,8 @@ function setupTargetShapeForm() {
     }
 
     try {
+      // Length/width/thickness are optional and omitted in this simpler form.
       const target = new TargetShape({
-        length,
-        width,
-        thickness,
         volume,
         units,
         label,
@@ -555,6 +572,10 @@ function setupTargetShapeForm() {
       });
 
       setTargetShape(target);
+
+      // Ensure volume summary & geometry state stay aligned.
+      recomputeTimeline();
+
       refreshTargetUI();
       refreshStepsUI();
 
@@ -647,7 +668,7 @@ function setupStepsUI() {
         locationInput.parentElement.classList.add("hidden");
       }
       if (volumeDeltaLabel) {
-        volumeDeltaLabel.textContent = "ΔV:";
+        volumeDeltaLabel.textContent = "ΔV";
       }
       return;
     }
@@ -686,7 +707,7 @@ function setupStepsUI() {
       if (config.volumeDeltaLabel) {
         volumeDeltaLabel.textContent = config.volumeDeltaLabel;
       } else {
-        volumeDeltaLabel.textContent = "ΔV:";
+        volumeDeltaLabel.textContent = "ΔV";
       }
     }
   }
@@ -985,14 +1006,23 @@ function setupStepsUI() {
     const massChangeType = getOperationMassChangeType(operationType);
 
     try {
-      const step = new ForgeStep(operationType, params, appState.startingStock || null, {
-        description: description || "",
-        units,
-        volumeDeltaHint: volumeDelta,
-        massChangeTypeOverride: massChangeType,
-      });
+      const step = new ForgeStep(
+        operationType,
+        params,
+        appState.startingStock || null,
+        {
+          description: description || "",
+          units,
+          volumeDeltaHint: volumeDelta,
+          massChangeTypeOverride: massChangeType,
+        }
+      );
 
       addStep(step);
+
+      // Make sure snapshots and volume summaries are updated for thumbnails
+      recomputeTimeline();
+
       refreshStepsUI();
       refreshTargetUI();
 
@@ -1015,6 +1045,10 @@ function setupStepsUI() {
     clearBtn.addEventListener("click", (evt) => {
       evt.preventDefault();
       clearSteps();
+
+      // Ensure geometry state reflects the cleared plan
+      recomputeTimeline();
+
       refreshStepsUI();
       clearStepsError(errorEl);
     });
@@ -1250,218 +1284,12 @@ function setupStepsUI() {
 /* PHASE 8: AUTONOMOUS PLANNER UI WIRING                                      */
 /* -------------------------------------------------------------------------- */
 
-// TODO MAGUS_REVIEW: legacy setupPlannerUI commented out by ForgeAI
-// (reason: Phase 8.4 requires recomputeTimeline() so storyboard / step
-//  overlays respond immediately after plan generation).
-//
-// function setupPlannerUI() {
-//   console.log("[Planner] Setting up Generate Forging Plan button…");
-//
-//   const button = document.getElementById("steps-autoplan-btn");
-//   const errorEl = document.getElementById("steps-error");
-//
-//   if (!button) {
-//     console.warn(
-//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
-//     );
-//     return;
-//   }
-//
-//   button.addEventListener("click", () => {
-//     if (!appState) {
-//       console.error("[Planner] appState is not available.");
-//       return;
-//     }
-//
-//     if (!errorEl) {
-//       console.error("[Planner] steps error element (#steps-error) not found.");
-//     }
-//
-//     if (errorEl) {
-//       clearStepsError(errorEl);
-//     }
-//
-//     const startingStock = appState.startingStock || null;
-//     const targetShape = appState.targetShape || null;
-//
-//     if (!startingStock) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define the starting stock before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     if (!targetShape) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define a target shape (manual or STL) before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     try {
-//       console.log("[Planner] Invoking autoPlan(startingStock, targetShape)…");
-//       const plannedSteps = autoPlan(startingStock, targetShape) || [];
-//
-//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
-//         if (errorEl) {
-//           showStepsError(
-//             errorEl,
-//             "Planner did not produce any steps. Try adjusting the description or target volume."
-//           );
-//         }
-//         return;
-//       }
-//
-//       // Replace any existing user-defined steps with the planner-generated ones.
-//       clearSteps();
-//
-//       plannedSteps.forEach((step) => {
-//         let concreteStep = step;
-//
-//         // Safety: ensure we always store ForgeStep instances in appState.steps.
-//         if (!(step instanceof ForgeStep)) {
-//           concreteStep = new ForgeStep(
-//             step.operationType,
-//             step.params || {},
-//             startingStock
-//           );
-//         }
-//
-//         addStep(concreteStep);
-//       });
-//
-//       // Phase 8.4: update geometry / storyboard immediately so overlays,
-//       // snapshots, and any future storyboard views respond to the new plan.
-//       recomputeTimeline();
-//
-//       // Ensure the steps panel and target comparison are refreshed.
-//       refreshStepsUI();
-//       refreshTargetUI();
-//     } catch (err) {
-//       console.error("[Planner] autoPlan failed with error:", err);
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Planner encountered an error while generating the forging plan. See console for details."
-//         );
-//       }
-//     }
-//   });
-// }
-
-// TODO MAGUS_REVIEW: previous *active* sync setupPlannerUI, now commented out
-// in favor of async version that awaits the new async planner.
-/*
-function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button…");
-
-  const button = document.getElementById("steps-autoplan-btn");
-  const errorEl = document.getElementById("steps-error");
-
-  if (!button) {
-    console.warn(
-      "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
-    );
-    return;
-  }
-
-  button.addEventListener("click", () => {
-    if (!appState) {
-      console.error("[Planner] appState is not available.");
-      return;
-    }
-
-    if (!errorEl) {
-      console.error("[Planner] steps error element (#steps-error) not found.");
-    }
-
-    if (errorEl) {
-      clearStepsError(errorEl);
-    }
-
-    const startingStock = appState.startingStock || null;
-    const targetShape = appState.targetShape || null;
-
-    if (!startingStock) {
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Please define the starting stock before generating a forging plan."
-        );
-      }
-      return;
-    }
-
-    if (!targetShape) {
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Please define a target shape (manual or STL) before generating a forging plan."
-        );
-      }
-      return;
-    }
-
-    try {
-      console.log("[Planner] Invoking autoPlan(startingStock, targetShape)…");
-      const plannedSteps = autoPlan(startingStock, targetShape) || [];
-
-      if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
-        if (errorEl) {
-          showStepsError(
-            errorEl,
-            "Planner did not produce any steps. Try adjusting the description or target volume."
-          );
-        }
-        return;
-      }
-
-      // Replace any existing user-defined steps with the planner-generated ones.
-      clearSteps();
-
-      plannedSteps.forEach((step) => {
-        let concreteStep = step;
-
-        // Safety: ensure we always store ForgeStep instances in appState.steps.
-        if (!(step instanceof ForgeStep)) {
-          concreteStep = new ForgeStep(
-            step.operationType,
-            step.params || {},
-            startingStock
-          );
-        }
-
-        addStep(concreteStep);
-      });
-
-      // Phase 8.4: update geometry / storyboard immediately so overlays,
-      // snapshots, and any future storyboard views respond to the new plan.
-      recomputeTimeline();
-
-      // Ensure the steps panel and target comparison are refreshed.
-      refreshStepsUI();
-      refreshTargetUI();
-    } catch (err) {
-      console.error("[Planner] autoPlan failed with error:", err);
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Planner encountered an error while generating the forging plan. See console for details."
-        );
-      }
-    }
-  });
-}
-*/
+// Old sync + legacy versions of setupPlannerUI are preserved above in comments.
+// This is the active async version, now wired to autoPlanWithLLM() which
+// prefers the LLM backend when configured and falls back to heuristic autoPlan().
 
 function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button (async)…");
+  console.log("[Planner] Setting up Generate Forging Plan button (async, LLM-aware)…");
 
   const button = document.getElementById("steps-autoplan-btn");
   const errorEl = document.getElementById("steps-error");
@@ -1511,8 +1339,11 @@ function setupPlannerUI() {
     }
 
     try {
-      console.log("[Planner] Invoking async autoPlan(startingStock, targetShape)…");
-      const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
+      console.log(
+        "[Planner] Invoking autoPlanWithLLM(startingStock, targetShape)…"
+      );
+      const plannedSteps =
+        (await autoPlanWithLLM(startingStock, targetShape)) || [];
 
       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
         if (errorEl) {
@@ -1550,7 +1381,7 @@ function setupPlannerUI() {
       refreshStepsUI();
       refreshTargetUI();
     } catch (err) {
-      console.error("[Planner] async autoPlan failed with error:", err);
+      console.error("[Planner] autoPlanWithLLM failed with error:", err);
       if (errorEl) {
         showStepsError(
           errorEl,
