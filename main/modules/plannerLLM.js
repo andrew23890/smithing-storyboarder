@@ -1,6 +1,6 @@
 // main/modules/plannerLLM.js
 //
-// Phase 8.5 — Optional LLM backend (INTERNAL ONLY)
+// Phase 8.5 — LLM backend (INTERNAL ONLY)
 //
 // This module defines a *purely internal* interface for an autonomous
 // planner-style LLM. The idea is:
@@ -11,31 +11,19 @@
 //     responses into operation suggestions that the rest of the system
 //     understands.
 //
-// IMPORTANT:
-//   • This file is SAFE / NO-OP by default — it does **not** actually call
-//     any remote LLM. In a browser-only build, it just returns an empty
-//     suggestion set so nothing breaks.
-//   • If you later wire it to a real LLM endpoint, keep the public API the
-//     same so planner.js stays stable.
-//
-// Public API:
-//
-//   async suggestOperationsWithLLM(plannerContext) → { steps: PlainStep[], notes?: string }
-//
-// Where `PlainStep` is a simple structure like:
-//   {
-//     operationType: string,            // e.g. "draw_out"
-//     params: Record<string, any>,      // canonical ForgeStep params
-//     rationale?: string,               // optional LLM comment
-//   }
-//
-// Nothing in the app depends on this yet, so it is fully backward compatible.
+// IMPORTANT (UPDATED):
+//   • This file now contains a REAL fetch-based backend hook that can talk to
+//     an external LLM service, **if configured**.
+//   • If no backend config is present, it gracefully returns an empty plan
+//     so planner.js can fall back to the heuristic planner.
+//   • No secrets or URLs are hard-coded. To enable the backend, you must set
+//     `window.FORGE_PLANNER_CONFIG` in your own app shell.
 
 import { FORGE_OPERATION_TYPES } from "./operations.js";
 import { getAllOperationParamSchemas } from "./forgeStepSchema.js";
 
 /**
- * Shape of the context that planner.js might eventually send:
+ * Shape of the context that planner.js sends here:
  *
  * {
  *   startingStockSnapshot: {
@@ -60,8 +48,8 @@ import { getAllOperationParamSchemas } from "./forgeStepSchema.js";
  * INTERNAL SYSTEM "PROMPT" (conceptual only).
  *
  * This is a *specification* of how we want an LLM to behave when
- * integrated. It is **not** currently sent anywhere; it just documents
- * the rules your future backend should follow.
+ * integrated. It is sent as part of the payload to your backend so
+ * the backend can build its own prompt from it.
  */
 const INTERNAL_PLANNER_SPEC = `
 You are ForgeAI, an internal forging planner.
@@ -89,7 +77,7 @@ Rules:
 2. Parameters
    - Prefer canonical fields:
        lengthRegion, location, lengthRemoved, collarLength,
-       taper length, twistDegrees, twistTurns, holeDiameter, etc.
+       taperLength, twistDegrees, twistTurns, holeDiameter, etc.
    - Follow the semantic hints:
        primaryAxis, longitudinal.regionParams, crossSection.parameters.
    - Avoid invented fields that the app will not understand.
@@ -105,7 +93,7 @@ Rules:
    - If you must deviate, prefer a small conservative loss.
 
 4. Planning strategy
-   - Use 3–12 operations for most plans.
+   - Use ~3–12 operations for most plans.
    - Start from stock and progressively approach the target:
        • set local cross-sections
        • introduce tapers / bends / twists
@@ -124,10 +112,17 @@ Rules:
 If information is insufficient, you may output an empty steps list.
 `;
 
+/* -------------------------------------------------------------------------
+ * Shape guard for plain steps (preserves original behavior)
+ * ---------------------------------------------------------------------- */
+
 /**
  * Shape guard to ensure we only return valid-ish plain steps.
  * This is defensive code so planner.js doesn't ingest garbage if
- * someone wires an LLM backend incorrectly later.
+ * someone wires an LLM backend incorrectly.
+ *
+ * NOTE: This is the same logic as the original implementation, kept
+ * active (not commented) so existing behavior is preserved.
  */
 function normalizePlainStep(raw, defaultOpType = null) {
   if (!raw || typeof raw !== "object") return null;
@@ -158,19 +153,16 @@ function normalizePlainStep(raw, defaultOpType = null) {
   return safeStep;
 }
 
+/* -------------------------------------------------------------------------
+ * ORIGINAL NO-OP IMPLEMENTATION (PRESERVED FOR REVIEW)
+ * ---------------------------------------------------------------------- */
+
 /**
- * NO-OP / stub implementation:
- *
- * For now we simply:
- *   - Log the context (for debugging).
- *   - Return an empty steps array and a short note.
- *
- * This keeps planner.js free to call this function without
- * requiring any backend connectivity.
- *
- * @param {object} plannerContext
- * @returns {Promise<{steps: Array<{operationType:string, params:object, rationale?:string}>, notes?: string}>}
+ * TODO MAGUS_REVIEW:
+ * This is the original no-op implementation that never called a backend.
+ * It is preserved here in comments so you can compare behavior.
  */
+/*
 export async function suggestOperationsWithLLM(plannerContext) {
   console.log("[PlannerLLM] suggestOperationsWithLLM called with context:", {
     // Avoid spamming the console with huge objects; keep it shallow.
@@ -198,15 +190,205 @@ export async function suggestOperationsWithLLM(plannerContext) {
 
   return result;
 }
+*/
+
+/* -------------------------------------------------------------------------
+ * Backend configuration helper
+ * ---------------------------------------------------------------------- */
 
 /**
- * For debugging / tools: exposes the internal spec and schemas so you
- * can inspect or export them if you build an actual backend later.
+ * Read backend configuration from a user-editable global.
+ *
+ * To enable the LLM planner, set this in your own page (e.g. before main.js):
+ *
+ *   window.FORGE_PLANNER_CONFIG = {
+ *     endpointUrl: "https://your-proxy-or-backend.example.com/forge-plan",
+ *     method: "POST", // optional, defaults to POST
+ *     headers: {
+ *       // e.g. "Authorization": "Bearer YOUR_TOKEN_HERE"
+ *       // or any other custom headers your backend requires.
+ *     },
+ *   };
+ *
+ * No secrets or URLs are hard-coded in this module.
+ */
+function getPlannerBackendConfig() {
+  if (typeof window === "undefined") {
+    return { enabled: false, reason: "window is undefined (non-browser runtime)" };
+  }
+
+  const cfg = window.FORGE_PLANNER_CONFIG || null;
+
+  if (!cfg || !cfg.endpointUrl) {
+    return {
+      enabled: false,
+      reason: "FORGE_PLANNER_CONFIG.endpointUrl not set",
+    };
+  }
+
+  const endpointUrl = String(cfg.endpointUrl).trim();
+  if (!endpointUrl) {
+    return {
+      enabled: false,
+      reason: "FORGE_PLANNER_CONFIG.endpointUrl is empty",
+    };
+  }
+
+  const method =
+    typeof cfg.method === "string" && cfg.method.trim()
+      ? cfg.method.trim().toUpperCase()
+      : "POST";
+
+  const headers =
+    cfg.headers && typeof cfg.headers === "object" ? { ...cfg.headers } : {};
+
+  // Always send JSON.
+  if (!headers["Content-Type"] && !headers["content-type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return {
+    enabled: true,
+    endpointUrl,
+    method,
+    headers,
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * REAL LLM-backed implementation (fetch-based, with safe fallback)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Main public function used by planner.js
+ *
+ * @param {object} plannerContext
+ * @returns {Promise<{steps: Array<{operationType:string, params:object, rationale?:string}>, notes?: string}>}
+ */
+export async function suggestOperationsWithLLM(plannerContext) {
+  // Light debug logging: keep it shallow so it doesn't spam the console.
+  console.log("[PlannerLLM] suggestOperationsWithLLM invoked.", {
+    hasContext: !!plannerContext,
+    allowedOpsCount: Array.isArray(plannerContext?.allowedOperations)
+      ? plannerContext.allowedOperations.length
+      : null,
+    maxSteps: plannerContext?.maxSteps ?? null,
+  });
+
+  const backendCfg = getPlannerBackendConfig();
+  if (!backendCfg.enabled) {
+    console.warn(
+      "[PlannerLLM] Backend not configured; returning empty LLM plan. Reason:",
+      backendCfg.reason
+    );
+    return {
+      steps: [],
+      notes:
+        "LLM backend not configured; heuristic planner should be used as fallback.",
+    };
+  }
+
+  // Build payload for your backend. The backend can then turn this into
+  // an actual LLM prompt however it chooses.
+  const payload = {
+    spec: INTERNAL_PLANNER_SPEC.trim(),
+    schema: {
+      operations: FORGE_OPERATION_TYPES,
+      paramSchemas: getAllOperationParamSchemas(),
+    },
+    context: plannerContext || null,
+  };
+
+  let response;
+  try {
+    response = await fetch(backendCfg.endpointUrl, {
+      method: backendCfg.method,
+      headers: backendCfg.headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn(
+      "[PlannerLLM] Network error while calling LLM backend; falling back.",
+      err
+    );
+    return {
+      steps: [],
+      notes:
+        "LLM backend network error; heuristic planner should be used as fallback.",
+    };
+  }
+
+  if (!response || !response.ok) {
+    console.warn(
+      "[PlannerLLM] LLM backend returned non-OK status; falling back.",
+      response && {
+        status: response.status,
+        statusText: response.statusText,
+      }
+    );
+    return {
+      steps: [],
+      notes:
+        "LLM backend responded with an error; heuristic planner should be used as fallback.",
+    };
+  }
+
+  let json;
+  try {
+    json = await response.json();
+  } catch (err) {
+    console.warn(
+      "[PlannerLLM] Failed to parse backend JSON response; falling back.",
+      err
+    );
+    return {
+      steps: [],
+      notes:
+        "LLM backend returned invalid JSON; heuristic planner should be used as fallback.",
+    };
+  }
+
+  const rawSteps = Array.isArray(json?.steps) ? json.steps : [];
+  const normalizedSteps = [];
+
+  for (const raw of rawSteps) {
+    const normalized = normalizePlainStep(raw);
+    if (normalized) {
+      normalizedSteps.push(normalized);
+    }
+  }
+
+  const notes =
+    typeof json?.notes === "string" && json.notes.trim()
+      ? json.notes.trim()
+      : undefined;
+
+  console.log("[PlannerLLM] LLM backend produced steps:", {
+    count: normalizedSteps.length,
+  });
+
+  return {
+    steps: normalizedSteps,
+    notes,
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * Debug / tooling helpers
+ * ---------------------------------------------------------------------- */
+
+/**
+ * For debugging / tools: exposes the internal spec so you can inspect
+ * or export it when building your backend.
  */
 export function getPlannerLLMSpec() {
   return INTERNAL_PLANNER_SPEC.trim();
 }
 
+/**
+ * For debugging / tools: exposes the operation map + param schemas
+ * used to constrain the planner language.
+ */
 export function getPlannerLLMSchemaBundle() {
   return {
     operations: FORGE_OPERATION_TYPES,

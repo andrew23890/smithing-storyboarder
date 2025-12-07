@@ -33,12 +33,12 @@
 //   8.4 – UI integration: wired in main.js via setupPlannerUI()
 //   8.5 – Optional LLM backend:
 //         - All prompting is internal-only via maybeUseLLMPlan()
-//         - Currently implemented as a stub that always falls back to
-//           rule-based planning, so behavior is unchanged. This gives
-//           you a clear hook to connect a real backend later.
+//         - Originally implemented as a stub that always falls back to
+//           rule-based planning; now upgraded to prefer a real LLM backend
+//           via plannerLLM.js, with the stub preserved in comments.
 //
 // Public surface:
-//   - autoPlan(startingStock, targetShape) → ForgeStep[]
+//   - autoPlan(startingStock, targetShape) → ForgeStep[] (now async)
 //
 // Internal pipeline (8.3):
 //   1. analyzeTargetFeatures()
@@ -59,6 +59,10 @@ import {
 } from "./volumeEngine.js";
 import { barStateFromStock, applyStepsToBar } from "./geometryEngine.js";
 import { validateStep, checkPlanEndState } from "./constraintsEngine.js";
+
+// NEW: LLM backend hook (Phase 8.5, required backend)
+// Uses the real fetch-based integration implemented in plannerLLM.js.
+import { suggestOperationsWithLLM } from "./plannerLLM.js";
 
 /* ------------------------------------------------------------------------- */
 /* Small helpers                                                             */
@@ -805,6 +809,9 @@ function attachPlannerDiagnostics(steps, analysis, diagnostics) {
  * Build a plain JSON-ish context object that an external LLM backend
  * could consume. This keeps all prompt shaping *inside* the planner,
  * as required by the roadmap. The user never sees this.
+ *
+ * NOTE: Extended slightly to include a simple volumeSummary and hints so
+ * the backend has more planning context (but still not required).
  */
 function buildPlannerLLMContext(startingStock, targetShape, analysis) {
   const safeStock = startingStock
@@ -832,18 +839,41 @@ function buildPlannerLLMContext(startingStock, targetShape, analysis) {
       }
     : null;
 
+  const startVolume =
+    analysis && Number.isFinite(analysis.startVolume)
+      ? analysis.startVolume
+      : safeStock && Number.isFinite(safeStock.volume)
+      ? safeStock.volume
+      : null;
+
+  const targetVolume =
+    analysis && Number.isFinite(analysis.targetVolume)
+      ? analysis.targetVolume
+      : safeTarget && Number.isFinite(safeTarget.volume)
+      ? safeTarget.volume
+      : null;
+
+  const volumeSummary =
+    startVolume != null && targetVolume != null
+      ? {
+          startingVolume: startVolume,
+          targetVolume,
+          netDelta: targetVolume - startVolume,
+          volumeRelation: analysis ? analysis.volumeRelation : "unknown",
+        }
+      : null;
+
   return {
-    startingStock: safeStock,
-    targetShape: safeTarget,
-    analysis: {
-      hasVolumes: analysis.hasVolumes,
-      startVolume: analysis.startVolume,
-      targetVolume: analysis.targetVolume,
-      volumeRatio: analysis.volumeRatio,
-      volumeRelation: analysis.volumeRelation,
-      textFeatures: { ...analysis.textFeatures },
-      inferredPattern: analysis.inferredPattern,
+    startingStockSnapshot: safeStock,
+    targetShapeSnapshot: safeTarget,
+    volumeSummary,
+    featureHints: {
+      textFeatures: analysis ? { ...analysis.textFeatures } : {},
+      inferredPattern: analysis ? analysis.inferredPattern : null,
     },
+    allowedOperations: Object.values(FORGE_OPERATION_TYPES),
+    maxSteps: 12,
+    notes: [],
   };
 }
 
@@ -865,29 +895,95 @@ function composeLLMPrompt(context) {
 }
 
 /**
+ * ORIGINAL STUB IMPLEMENTATION (PRESERVED FOR REVIEW)
+ *
  * OPTIONAL: hook for an external LLM-backed planner.
  *
  * Right now this is implemented as a stub that ALWAYS returns null so
- * behavior remains purely heuristic. To enable a real backend, you would:
- *
- *   - Implement the actual API call here (fetch / XMLHttpRequest / etc.).
- *   - Parse the returned JSON into ForgeStep instances.
- *   - Return that array instead of null.
- *
- * The rest of the planner will then use the LLM plan when available.
+ * behavior remains purely heuristic.
  */
+/* TODO MAGUS_REVIEW: original synchronous maybeUseLLMPlan stub preserved.
 function maybeUseLLMPlan(startingStock, targetShape, analysis) {
   const ctx = buildPlannerLLMContext(startingStock, targetShape, analysis);
   const promptObject = composeLLMPrompt(ctx);
 
-  // TODO MAGUS_REVIEW: Phase 8.5 LLM backend hook.
+  // Phase 8.5 original LLM backend hook.
   // For now, we just log the promptObject for debugging and return null
   // so the planner continues to use the heuristic pipeline.
-  // You can wire this up to a real backend later.
   console.debug("[planner][LLM] prompt object (stub only):", promptObject);
 
   // Returning null means "no LLM plan available; use rule-based heuristics".
   return null;
+}
+*/
+
+/**
+ * NEW: REAL LLM-backed planner hook (async).
+ *
+ * This function delegates to plannerLLM.suggestOperationsWithLLM(), then
+ * converts the returned plain steps into ForgeStep instances.
+ *
+ * It returns:
+ *   • Array<ForgeStep>  – when a usable LLM plan is available
+ *   • null              – when the LLM is unavailable or returns no steps
+ */
+async function maybeUseLLMPlan(startingStock, targetShape, analysis) {
+  const ctx = buildPlannerLLMContext(startingStock, targetShape, analysis);
+  const promptObject = composeLLMPrompt(ctx);
+
+  try {
+    const result = await suggestOperationsWithLLM(promptObject);
+
+    if (!result || !Array.isArray(result.steps) || result.steps.length === 0) {
+      return null;
+    }
+
+    const steps = [];
+    const validOps = new Set(Object.values(FORGE_OPERATION_TYPES));
+
+    for (const plain of result.steps) {
+      if (!plain || typeof plain !== "object") continue;
+
+      const opType = plain.operationType;
+      const params =
+        plain.params && typeof plain.params === "object" ? plain.params : {};
+
+      if (!opType || !validOps.has(opType)) {
+        console.warn(
+          "[planner][LLM] Ignoring step with unknown operationType:",
+          opType
+        );
+        continue;
+      }
+
+      const step = new ForgeStep(opType, params, startingStock);
+
+      step.plannerMeta = step.plannerMeta || {};
+      step.plannerMeta.source = "llm";
+      if (typeof plain.rationale === "string" && plain.rationale.trim()) {
+        step.plannerMeta.rationale = plain.rationale.trim();
+      }
+
+      steps.push(step);
+    }
+
+    if (!steps.length) {
+      return null;
+    }
+
+    if (result.notes && steps[0]) {
+      steps[0].plannerMeta = steps[0].plannerMeta || {};
+      steps[0].plannerMeta.llmPlanNotes = result.notes;
+    }
+
+    return steps;
+  } catch (err) {
+    console.warn(
+      "[planner][LLM] suggestOperationsWithLLM failed; falling back to heuristics.",
+      err
+    );
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -895,12 +991,13 @@ function maybeUseLLMPlan(startingStock, targetShape, analysis) {
 /* ------------------------------------------------------------------------- */
 
 /**
- * Core planner entrypoint.
+ * ORIGINAL SYNC ENTRYPOINT (PRESERVED FOR REVIEW)
  *
  * @param {Stock|null} startingStock
  * @param {TargetShape|null} targetShape
  * @returns {ForgeStep[]} steps
  */
+/* TODO MAGUS_REVIEW: original synchronous autoPlan preserved.
 export function autoPlan(startingStock, targetShape) {
   if (!startingStock || !targetShape) {
     console.warn(
@@ -959,5 +1056,81 @@ export function autoPlan(startingStock, targetShape) {
   //   - appState.steps = steps
   //   - recomputeTimeline()
   //   - refreshing any UI panels (steps, storyboard, etc.)
+  return steps;
+}
+*/
+
+/**
+ * NEW ASYNC ENTRYPOINT (Phase 8.5 completed)
+ *
+ * @param {Stock|null} startingStock
+ * @param {TargetShape|null} targetShape
+ * @returns {Promise<ForgeStep[]>} steps
+ */
+export async function autoPlan(startingStock, targetShape) {
+  if (!startingStock || !targetShape) {
+    console.warn(
+      "[planner] autoPlan called without both startingStock and targetShape."
+    );
+    return [];
+  }
+
+  // 1) Analyze target features (volume + text hints).
+  const analysis = analyzeTargetFeatures(startingStock, targetShape);
+
+  // 2a) Prefer LLM-backed plan when available.
+  let llmPlan = null;
+  try {
+    llmPlan = await maybeUseLLMPlan(startingStock, targetShape, analysis);
+  } catch (err) {
+    console.warn(
+      "[planner] maybeUseLLMPlan threw; falling back to heuristics.",
+      err
+    );
+    llmPlan = null;
+  }
+
+  if (Array.isArray(llmPlan) && llmPlan.length > 0) {
+    console.log(
+      "[planner] Using LLM-generated plan (Phase 8.5 backend enabled)."
+    );
+    const diagnostics = simulatePlanForDiagnostics(
+      startingStock,
+      llmPlan,
+      targetShape
+    );
+    attachPlannerDiagnostics(llmPlan, analysis, diagnostics);
+    return llmPlan;
+  }
+
+  // 2b) Heuristic fallback: propose candidate operations.
+  const specs = proposeCandidateOperationSpecs(analysis, startingStock);
+  if (!specs.length) {
+    console.warn(
+      "[planner] No candidate operation specs produced; returning empty plan."
+    );
+    return [];
+  }
+
+  // 3) Materialize ForgeStep instances from specs.
+  const steps = materializeStepsFromSpecs(startingStock, specs);
+
+  if (!steps.length) {
+    console.warn(
+      "[planner] Failed to materialize steps from specs; returning empty plan."
+    );
+    return [];
+  }
+
+  // 4) Run a dry-run simulation for diagnostics (volume, constraints, geometry).
+  const diagnostics = simulatePlanForDiagnostics(
+    startingStock,
+    steps,
+    targetShape
+  );
+
+  // 5) Attach diagnostics metadata to each step (non-breaking).
+  attachPlannerDiagnostics(steps, analysis, diagnostics);
+
   return steps;
 }
