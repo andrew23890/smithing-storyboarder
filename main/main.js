@@ -13,6 +13,7 @@ import {
 } from "./modules/operations.js";
 import { parseSTLFile } from "./modules/cadParser.js";
 import { computeStockVolume } from "./modules/volumeEngine.js";
+import { setupCadPreviewCanvas } from "./modules/cadPreview.js";
 import {
   appState,
   setStartingStock,
@@ -1249,6 +1250,107 @@ function setupStepsUI() {
 /* PHASE 8: AUTONOMOUS PLANNER UI WIRING                                      */
 /* -------------------------------------------------------------------------- */
 
+// TODO MAGUS_REVIEW: legacy setupPlannerUI commented out by ForgeAI
+// (reason: Phase 8.4 requires recomputeTimeline() so storyboard / step
+//  overlays respond immediately after plan generation).
+//
+// function setupPlannerUI() {
+//   console.log("[Planner] Setting up Generate Forging Plan button…");
+//
+//   const button = document.getElementById("steps-autoplan-btn");
+//   const errorEl = document.getElementById("steps-error");
+//
+//   if (!button) {
+//     console.warn(
+//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
+//     );
+//     return;
+//   }
+//
+//   button.addEventListener("click", () => {
+//     if (!appState) {
+//       console.error("[Planner] appState is not available.");
+//       return;
+//     }
+//
+//     if (!errorEl) {
+//       console.error("[Planner] steps error element (#steps-error) not found.");
+//     }
+//
+//     if (errorEl) {
+//       clearStepsError(errorEl);
+//     }
+//
+//     const startingStock = appState.startingStock || null;
+//     const targetShape = appState.targetShape || null;
+//
+//     if (!startingStock) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define the starting stock before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     if (!targetShape) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define a target shape (manual or STL) before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     try {
+//       console.log("[Planner] Invoking autoPlan(startingStock, targetShape)…");
+//       const plannedSteps = autoPlan(startingStock, targetShape) || [];
+//
+//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
+//         if (errorEl) {
+//           showStepsError(
+//             errorEl,
+//             "Planner did not produce any steps. Try adjusting the description or target volume."
+//           );
+//         }
+//         return;
+//       }
+//
+//       // Replace any existing user-defined steps with the planner-generated ones.
+//       clearSteps();
+//
+//       plannedSteps.forEach((step) => {
+//         let concreteStep = step;
+//
+//         // Safety: ensure we always store ForgeStep instances in appState.steps.
+//         if (!(step instanceof ForgeStep)) {
+//           concreteStep = new ForgeStep(
+//             step.operationType,
+//             step.params || {},
+//             startingStock
+//           );
+//         }
+//
+//         addStep(concreteStep);
+//       });
+//
+//       // Ensure the steps panel and target comparison are refreshed.
+//       refreshStepsUI();
+//       refreshTargetUI();
+//     } catch (err) {
+//       console.error("[Planner] autoPlan failed with error:", err);
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Planner encountered an error while generating the forging plan. See console for details."
+//         );
+//       }
+//     }
+//   });
+// }
+
 function setupPlannerUI() {
   console.log("[Planner] Setting up Generate Forging Plan button…");
 
@@ -1331,6 +1433,10 @@ function setupPlannerUI() {
         addStep(concreteStep);
       });
 
+      // Phase 8.4: update geometry / storyboard immediately so overlays,
+      // snapshots, and any future storyboard views respond to the new plan.
+      recomputeTimeline();
+
       // Ensure the steps panel and target comparison are refreshed.
       refreshStepsUI();
       refreshTargetUI();
@@ -1408,7 +1514,6 @@ function setupGeometrySimulationUI() {
 /* -------------------------------------------------------------------------- */
 /* APP INIT                                                                   */
 /* -------------------------------------------------------------------------- */
-
 
 function initApp() {
   console.log("Smithing Storyboarder booting up…");
