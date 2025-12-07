@@ -129,6 +129,7 @@ function normalizeOperationType(rawOperationType) {
  * - twist / scroll → diagonal hatch lines across the bar
  * - punch / drift → circle "hole" in the bar
  * - cut / trim / slit / split → central gap in the bar (two rect segments)
+ * - draw_out / upset → stretched or compressed bar rectangle
  *
  * All of this is *purely visual*. It never throws and never mutates the
  * snapshot itself; it only tweaks the drawing segments.
@@ -281,9 +282,52 @@ function applyOperationStylizationToSegments(segments, baseRect, opInfo = {}) {
     return;
   }
 
-  // NOTE: For DRAW_OUT / UPSET we rely on the fact that the snapshot itself
-  //       has an updated length/thickness, so the base rectangle already
-  //       appears stretched or compressed. No extra overlay needed here.
+  // --- DRAW_OUT / UPSET → stretch / compress the bar rectangle ------------
+  //
+  // If the geometry snapshots already encode length/thickness changes, this
+  // is redundant but harmless. If they *don't* (early phases), this gives a
+  // clear cartoon hint that "something stretched" or "something got chunky".
+  if (opType === "draw_out" || opType === "upset") {
+    const baseRectSeg = segments.find((seg) => seg && seg.kind === "rect");
+    if (!baseRectSeg) {
+      return;
+    }
+
+    if (opType === "draw_out") {
+      // Slight horizontal stretch to suggest lengthening.
+      const stretchFactor = 1.25;
+      const newWidth = width * stretchFactor;
+      const deltaW = newWidth - width;
+      const newX = x - deltaW / 2;
+
+      baseRectSeg.x = newX;
+      baseRectSeg.width = newWidth;
+      // Keep height as-is so it reads as longer but not thicker.
+    } else {
+      // Upset: shorter and a bit thicker.
+      const compressFactor = 0.75;
+      const newWidth = width * compressFactor;
+      const deltaW = width - newWidth;
+      const newX = x + deltaW / 2;
+
+      const thicknessBoostFactor = 1.2;
+      const newHeight = height * thicknessBoostFactor;
+      const newY = cy - newHeight / 2;
+
+      baseRectSeg.x = newX;
+      baseRectSeg.width = newWidth;
+      baseRectSeg.y = newY;
+      baseRectSeg.height = newHeight;
+    }
+
+    return;
+  }
+
+  // TODO MAGUS_REVIEW: legacy behavior note (kept for reference).
+  // Originally, DRAW_OUT / UPSET relied solely on the snapshot having an
+  // updated length / thickness so the base rectangle already appeared
+  // stretched or compressed. Phase 7 now adds an explicit symbolic effect
+  // above even if geometry snapshots haven't changed yet.
 }
 
 /* ------------------------------------------------------------------------- */
@@ -401,12 +445,16 @@ export function buildBarDrawingModelFromStockSnapshot(snapshot, options = {}) {
     };
 
     if (opInfo.type) {
-      applyOperationStylizationToSegments(segments, {
-        x: barX,
-        y: barY,
-        width: barWidth,
-        height: barHeight,
-      }, opInfo);
+      applyOperationStylizationToSegments(
+        segments,
+        {
+          x: barX,
+          y: barY,
+          width: barWidth,
+          height: barHeight,
+        },
+        opInfo
+      );
     }
   } catch (err) {
     // Defensive: drawing should never break the rest of the app.

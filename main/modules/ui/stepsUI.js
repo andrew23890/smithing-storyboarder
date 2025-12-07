@@ -290,7 +290,21 @@ export function renderStepsList(appState, listEl, options = {}) {
 
     if (snapshot) {
       try {
-        const model = buildBarDrawingModelFromStockSnapshot(snapshot);
+        // TODO MAGUS_REVIEW: legacy thumbnail rendering without operation hints
+        // const model = buildBarDrawingModelFromStockSnapshot(snapshot);
+        // const svg = createBarSvg(model, {
+        //   width: 120,
+        //   height: 40,
+        //   title: "Bar shape after this step",
+        // });
+        // thumbnailWrapper.appendChild(svg);
+
+        // Phase 7: pass operationType/params so the drawing engine can add
+        // simple symbolic overlays (taper, bend, twist, punch, cut, etc.).
+        const model = buildBarDrawingModelFromStockSnapshot(snapshot, {
+          operationType: step && step.operationType,
+          operationParams: step && step.params,
+        });
         const svg = createBarSvg(model, {
           width: 120,
           height: 40,
