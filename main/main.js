@@ -434,11 +434,37 @@ function setupCadImport() {
     }
 
     try {
-      const text = await file.text();
-      const parsed = parseSTLFile(text);
-      if (!parsed || !parsed.volume || !parsed.bounds) {
+      // TODO MAGUS_REVIEW: legacy STL import code (kept for reference).
+      // This version treated parseSTLFile as a synchronous function that
+      // accepted a text string, and it *required* both volume and bounds.
+      //
+      // const text = await file.text();
+      // const parsed = parseSTLFile(text);
+      // if (!parsed || !parsed.volume || !parsed.bounds) {
+      //   showTargetError(
+      //     "Could not extract volume / bounds from STL. Please check the file.",
+      //     errorEl
+      //   );
+      //   return;
+      // }
+      //
+      // const target = TargetShape.fromStlMetadata(parsed, units);
+      // setTargetShape(target);
+      // refreshTargetUI();
+      // refreshStepsUI();
+      //
+      // console.log("[CAD] Imported STL target:", target);
+
+      // New implementation:
+      // - Call parseSTLFile with the File object (it uses FileReader internally).
+      // - Await the Promise it returns.
+      // - Only *require* volume for now; bounds will be optional until
+      //   cadParser is extended to compute a bounding box.
+      const parsed = await parseSTLFile(file);
+
+      if (!parsed || !parsed.volume) {
         showTargetError(
-          "Could not extract volume / bounds from STL. Please check the file.",
+          "Could not extract volume from STL. Please check the file.",
           errorEl
         );
         return;
@@ -449,11 +475,11 @@ function setupCadImport() {
       refreshTargetUI();
       refreshStepsUI();
 
-      console.log("[CAD] Imported STL target:", target);
+      console.log("[CAD] Imported STL target:", parsed, target);
     } catch (err) {
       console.error("[CAD] Error importing STL:", err);
       showTargetError(
-        "Error reading STL file. Please ensure it is a valid ASCII STL.",
+        "Error reading STL file. Please ensure it is a valid STL.",
         errorEl
       );
     }

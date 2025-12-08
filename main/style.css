@@ -1,3 +1,5 @@
+/* main/style.css */
+
 /* Basic reset-ish styles */
 *,
 *::before,
@@ -629,4 +631,14 @@ body {
 
 .step-preview-after {
   /* inherits stroke from SVG; appears slightly bolder */
+}
+
+/* -------------------------------------------------------------------------- */
+/* Utility classes                                                            */
+/* -------------------------------------------------------------------------- */
+
+/* TODO MAGUS_REVIEW: .hidden utility to support hide/show behavior in
+   main.js (e.g., stock dimB wrapper, conditional param fields, placeholders). */
+.hidden {
+  display: none !important;
 }
