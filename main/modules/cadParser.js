@@ -5,6 +5,11 @@
  *
  * All units are in the STL's native units; we don't know if those are mm, in, etc.
  * The caller decides what units those correspond to when creating TargetShape.
+ *
+ * TODO MAGUS_REVIEW: Extended to also compute a simple axis-aligned bounding
+ * box for the mesh. This is returned as `bounds` with properties:
+ *   { minX, maxX, minY, maxY, minZ, maxZ }
+ * No existing fields have been removed or renamed.
  */
 
 function computeMeshVolumeFromTriangles(triangles) {
@@ -50,6 +55,15 @@ function parseBinarySTL(arrayBuffer) {
   }
 
   const triangles = [];
+
+  // TODO MAGUS_REVIEW: bounds accumulation for binary STL
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
   let offset = 84;
 
   for (let i = 0; i < triangleCount; i++) {
@@ -77,16 +91,33 @@ function parseBinarySTL(arrayBuffer) {
 
     triangles.push([v0, v1, v2]);
 
+    // Update bounds with all three vertices
+    const verts = [v0, v1, v2];
+    for (const [x, y, z] of verts) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+
     // Skip attribute byte count (2 bytes)
     offset += 36 + 2;
   }
 
   const volume = computeMeshVolumeFromTriangles(triangles);
 
+  const bounds =
+    triangles.length > 0
+      ? { minX, maxX, minY, maxY, minZ, maxZ }
+      : null;
+
   return {
     format: "binary",
     triangleCount: triangles.length,
     volume,
+    bounds,
   };
 }
 
@@ -94,6 +125,14 @@ function parseASCIISTLFromText(text) {
   const lines = text.split(/\r?\n/);
   const triangles = [];
   const currentVertices = [];
+
+  // TODO MAGUS_REVIEW: bounds accumulation for ASCII STL
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
 
   for (let rawLine of lines) {
     const line = rawLine.trim().toLowerCase();
@@ -105,7 +144,16 @@ function parseASCIISTLFromText(text) {
         const y = parseFloat(parts[2]);
         const z = parseFloat(parts[3]);
         if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-          currentVertices.push([x, y, z]);
+          const v = [x, y, z];
+          currentVertices.push(v);
+
+          // Update bounds as we go
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
         }
       }
       if (currentVertices.length === 3) {
@@ -125,10 +173,16 @@ function parseASCIISTLFromText(text) {
 
   const volume = computeMeshVolumeFromTriangles(triangles);
 
+  const bounds =
+    triangles.length > 0
+      ? { minX, maxX, minY, maxY, minZ, maxZ }
+      : null;
+
   return {
     format: "ascii",
     triangleCount: triangles.length,
     volume,
+    bounds,
   };
 }
 
