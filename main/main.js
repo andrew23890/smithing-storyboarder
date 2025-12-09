@@ -134,7 +134,13 @@ function updateStepPreviewPanelForStep(stepIndex) {
   if (!panel) return;
 
   const placeholder = panel.querySelector(".step-preview-placeholder");
-  const existingSvg = panel.querySelector("svg.step-preview-overlay");
+  // TODO MAGUS_REVIEW: legacy lookup only matched "step-preview-overlay";
+  // updated to also catch the default "step-preview-svg" class so we remove
+  // any existing overlay before adding a new one.
+  // const existingSvg = panel.querySelector("svg.step-preview-overlay");
+  const existingSvg =
+    panel.querySelector("svg.step-preview-overlay") ||
+    panel.querySelector("svg.step-preview-svg");
 
   if (existingSvg && existingSvg.parentNode) {
     existingSvg.parentNode.removeChild(existingSvg);
@@ -434,32 +440,15 @@ function setupCadImport() {
     }
 
     try {
-      // TODO MAGUS_REVIEW: legacy STL import code (kept for reference).
-      // This version treated parseSTLFile as a synchronous function that
-      // accepted a text string, and it *required* both volume and bounds.
-      //
+      // TODO MAGUS_REVIEW: legacy text-based STL parsing kept for reference.
+      // Previously we read the file as text and passed a string into
+      // parseSTLFile, which actually expects a File for binary/ASCII parsing.
       // const text = await file.text();
       // const parsed = parseSTLFile(text);
-      // if (!parsed || !parsed.volume || !parsed.bounds) {
-      //   showTargetError(
-      //     "Could not extract volume / bounds from STL. Please check the file.",
-      //     errorEl
-      //   );
-      //   return;
-      // }
       //
-      // const target = TargetShape.fromStlMetadata(parsed, units);
-      // setTargetShape(target);
-      // refreshTargetUI();
-      // refreshStepsUI();
-      //
-      // console.log("[CAD] Imported STL target:", target);
+      // New behavior: await parseSTLFile(file) with the File object so we
+      // can parse both binary and ASCII STL and compute volume/bounds.
 
-      // New implementation:
-      // - Call parseSTLFile with the File object (it uses FileReader internally).
-      // - Await the Promise it returns.
-      // - Only *require* volume for now; bounds will be optional until
-      //   cadParser is extended to compute a bounding box.
       const parsed = await parseSTLFile(file);
 
       if (!parsed || !parsed.volume) {
@@ -470,16 +459,37 @@ function setupCadImport() {
         return;
       }
 
-      const target = TargetShape.fromStlMetadata(parsed, units);
+      // TODO MAGUS_REVIEW: legacy TargetShape.fromStlMetadata call kept
+      // for context. The current TargetShape class does not expose this
+      // helper, so we construct the TargetShape directly.
+      // const target = TargetShape.fromStlMetadata(parsed, units);
+
+      const target = new TargetShape({
+        sourceType: "cad",
+        label: file.name || "Imported STL target",
+        volume: parsed.volume,
+        units,
+        notes:
+          parsed && typeof parsed.format === "string"
+            ? `Imported from ${parsed.format.toUpperCase()} STL`
+            : "Imported from STL",
+        metadata: {
+          format: parsed.format || null,
+          triangleCount: parsed.triangleCount || null,
+          bounds: parsed.bounds || null,
+          originalFileName: file.name || null,
+        },
+      });
+
       setTargetShape(target);
       refreshTargetUI();
       refreshStepsUI();
 
-      console.log("[CAD] Imported STL target:", parsed, target);
+      console.log("[CAD] Imported STL target:", target);
     } catch (err) {
       console.error("[CAD] Error importing STL:", err);
       showTargetError(
-        "Error reading STL file. Please ensure it is a valid STL.",
+        "Error reading STL file. Please ensure it is a valid STL (ASCII or binary).",
         errorEl
       );
     }
