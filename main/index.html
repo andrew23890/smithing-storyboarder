@@ -426,6 +426,26 @@
     <small>Smithing Storyboarder &middot; ForgeAI helper loaded</small>
   </footer>
 
+  <!-- Phase 8.5: LLM planner backend configuration hook.
+       NOTE:
+       - This does NOT talk directly to OpenAI from the browser.
+       - Instead, point this at your own backend, which then calls OpenAI (or another LLM).
+       - Keep any API keys and secrets on the server ONLY. -->
+  <script>
+    // TODO MAGUS_REVIEW: configure this in your deployment, not in committed code
+    // if you are going to wire up a real backend. For development you can
+    // temporarily uncomment and point to a local server, e.g.:
+    //
+    // window.FORGE_PLANNER_CONFIG = {
+    //   endpointUrl: "http://localhost:3000/forge-plan",
+    //   method: "POST",
+    //   headers: {
+    //     // Your backend may expect auth headers or none at all.
+    //     // Do NOT put OpenAI or other provider keys here.
+    //   },
+    // };
+  </script>
+
   <!-- Main JS entry point (ES module) -->
   <script type="module" src="./main.js"></script>
 </body>
