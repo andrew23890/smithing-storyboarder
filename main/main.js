@@ -63,7 +63,10 @@ import {
   createBeforeAfterOverlaySvg,
 } from "./modules/drawingEngine.js";
 
-import { autoPlan } from "./modules/planner.js";
+// NOTE: Phase 8 – we now have both heuristic and LLM-backed planners.
+// autoPlan remains the synchronous heuristic-only entrypoint.
+// autoPlanWithLLM prefers the backend when configured, falling back to autoPlan().
+import { autoPlan, autoPlanWithLLM } from "./modules/planner.js";
 
 /* -------------------------------------------------------------------------- */
 /* HELLO BUTTON                                                               */
@@ -1396,6 +1399,7 @@ function setupStepsUI() {
 //       // Replace any existing user-defined steps with the planner-generated ones.
 //       clearSteps();
 //
+//
 //       plannedSteps.forEach((step) => {
 //         let concreteStep = step;
 //
@@ -1535,8 +1539,129 @@ function setupPlannerUI() {
 }
 */
 
+// TODO MAGUS_REVIEW: previous async setupPlannerUI that still called the
+// synchronous autoPlan(). Kept for comparison with the new LLM-aware version.
+/*
+// function setupPlannerUI() {
+//   console.log("[Planner] Setting up Generate Forging Plan button (async)…");
+//
+//   const button = document.getElementById("steps-autoplan-btn");
+//   const errorEl = document.getElementById("steps-error");
+//
+//   if (!button) {
+//     console.warn(
+//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
+//     );
+//     return;
+//   }
+//
+//   button.addEventListener("click", async () => {
+//     if (!appState) {
+//       console.error("[Planner] appState is not available.");
+//       return;
+//     }
+//
+//     if (!errorEl) {
+//       console.error("[Planner] steps error element (#steps-error) not found.");
+//     }
+//
+//     if (errorEl) {
+//       clearStepsError(errorEl);
+//     }
+//
+//     const startingStock = appState.startingStock || null;
+//     const targetShape = appState.targetShape || null;
+//
+//     if (!startingStock) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define the starting stock before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     if (!targetShape) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define a target shape (manual or STL) before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     try {
+//       console.log(
+//         "[Planner] Invoking async autoPlan(startingStock, targetShape)…"
+//       );
+//       const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
+//
+//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
+//         if (errorEl) {
+//           showStepsError(
+//             errorEl,
+//             "Planner did not produce any steps. Try adjusting the description or target volume."
+//           );
+//         }
+//         return;
+//       }
+//
+//       // Replace any existing user-defined steps with the planner-generated ones.
+//       clearSteps();
+//
+//       plannedSteps.forEach((step) => {
+//         let concreteStep = step;
+//
+//         // Safety: ensure we always store ForgeStep instances in appState.steps.
+//         if (!(step instanceof ForgeStep)) {
+//           concreteStep = new ForgeStep(
+//             step.operationType,
+//             step.params || {},
+//             startingStock
+//           );
+//         }
+//
+//         addStep(concreteStep);
+//       });
+//
+//       // Phase 8.4: update geometry / storyboard immediately so overlays,
+//       // snapshots, and any future storyboard views respond to the new plan.
+//       recomputeTimeline();
+//
+//       // Ensure the steps panel and target comparison are refreshed.
+//       refreshStepsUI();
+//       refreshTargetUI();
+//     } catch (err) {
+//       console.error("[Planner] async autoPlan failed with error:", err);
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Planner encountered an error while generating the forging plan. See console for details."
+//         );
+//       }
+//     }
+//   });
+// }
+*/
+
+/**
+ * Phase 8.4 FINAL: LLM-aware async planner UI wiring.
+ *
+ * Uses autoPlanWithLLM(), which:
+ *   - prefers the external LLM backend (when configured),
+ *   - falls back to heuristic autoPlan() if the backend is missing or fails.
+ *
+ * UI behavior:
+ *   - Validates starting stock + target shape are present.
+ *   - Shows button loading state while plan is being generated.
+ *   - Replaces existing steps with the new plan.
+ *   - Calls recomputeTimeline() so geometry/storyboard update immediately.
+ *   - Refreshes steps + target panels.
+ */
 function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button (async)…");
+  console.log("[Planner] Setting up Generate Forging Plan button (LLM-aware async)…");
 
   const button = document.getElementById("steps-autoplan-btn");
   const errorEl = document.getElementById("steps-error");
@@ -1585,11 +1710,16 @@ function setupPlannerUI() {
       return;
     }
 
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Generating plan…";
+
     try {
       console.log(
-        "[Planner] Invoking async autoPlan(startingStock, targetShape)…"
+        "[Planner] Invoking autoPlanWithLLM(startingStock, targetShape)…"
       );
-      const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
+      const plannedSteps =
+        (await autoPlanWithLLM(startingStock, targetShape)) || [];
 
       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
         if (errorEl) {
@@ -1627,13 +1757,16 @@ function setupPlannerUI() {
       refreshStepsUI();
       refreshTargetUI();
     } catch (err) {
-      console.error("[Planner] async autoPlan failed with error:", err);
+      console.error("[Planner] autoPlanWithLLM failed with error:", err);
       if (errorEl) {
         showStepsError(
           errorEl,
           "Planner encountered an error while generating the forging plan. See console for details."
         );
       }
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
     }
   });
 }
