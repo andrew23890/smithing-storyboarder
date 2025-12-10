@@ -60,6 +60,10 @@ import {
 import { barStateFromStock, applyStepsToBar } from "./geometryEngine.js";
 import { validateStep, checkPlanEndState } from "./constraintsEngine.js";
 
+// NEW (Phase 8.1 integration): use the canonical operation ids from the
+// forgeStepSchema so LLM + heuristics stay aligned.
+import { getSchemaOperationTypeIds } from "./forgeStepSchema.js";
+
 // NEW (Phase 8.5): hook into the real LLM backend module.
 // NOTE: This is additive; legacy autoPlan() behavior is unchanged
 // until callers explicitly opt into autoPlanWithLLM().
@@ -1014,7 +1018,28 @@ function buildPlannerContextForLLM(startingStock, targetShape, analysis) {
     textFeatures: { ...analysis.textFeatures },
   };
 
-  const allowedOperations = Object.values(FORGE_OPERATION_TYPES);
+  // NEW (Phase 8.1-aware): intersect the operations enum with the
+  // forgeStepSchema operation ids so the backend only sees operations
+  // that have canonical semantics defined.
+  let allowedOperations = Object.values(FORGE_OPERATION_TYPES);
+  try {
+    const schemaIds = getSchemaOperationTypeIds
+      ? getSchemaOperationTypeIds()
+      : null;
+    if (Array.isArray(schemaIds) && schemaIds.length > 0) {
+      const schemaSet = new Set(schemaIds);
+      const filtered = allowedOperations.filter((op) => schemaSet.has(op));
+      if (filtered.length > 0) {
+        allowedOperations = filtered;
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[planner] Failed to intersect allowedOperations with schema ids; using full set.",
+      err
+    );
+  }
+
   const maxSteps = 12;
 
   const notes = [];
@@ -1059,11 +1084,29 @@ async function maybeUseLLMPlanAsync(startingStock, targetShape, analysis) {
       return null;
     }
 
+    // Enforce the same allowedOperations and maxSteps that we told the backend.
+    const allowedSet = new Set(plannerContext.allowedOperations || []);
+    const maxSteps =
+      Number.isFinite(plannerContext.maxSteps) && plannerContext.maxSteps > 0
+        ? plannerContext.maxSteps
+        : 12;
+
     const steps = [];
     let currentStateForHeuristics = startingStock;
 
-    for (const plain of result.steps) {
+    const rawSteps = result.steps.slice(0, maxSteps);
+
+    for (const plain of rawSteps) {
       if (!plain || !plain.operationType) continue;
+
+      // If we have an allowed set, enforce it defensively here as well.
+      if (allowedSet.size && !allowedSet.has(plain.operationType)) {
+        console.debug(
+          "[planner] Skipping LLM step with disallowed operationType:",
+          plain.operationType
+        );
+        continue;
+      }
 
       const params =
         plain.params && typeof plain.params === "object"
