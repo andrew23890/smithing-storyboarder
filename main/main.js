@@ -694,7 +694,9 @@ function setupStepsUI() {
         locationInput.parentElement.classList.add("hidden");
       }
       if (volumeDeltaLabel) {
-        volumeDeltaLabel.textContent = "ΔV:";
+        // TODO MAGUS_REVIEW: legacy terse label kept for reference.
+        // volumeDeltaLabel.textContent = "ΔV:";
+        volumeDeltaLabel.textContent = "Volume change (ΔV):";
       }
       return;
     }
@@ -733,7 +735,9 @@ function setupStepsUI() {
       if (config.volumeDeltaLabel) {
         volumeDeltaLabel.textContent = config.volumeDeltaLabel;
       } else {
-        volumeDeltaLabel.textContent = "ΔV:";
+        // TODO MAGUS_REVIEW: legacy terse fallback kept for reference.
+        // volumeDeltaLabel.textContent = "ΔV:";
+        volumeDeltaLabel.textContent = "Volume change (ΔV):";
       }
     }
   }
@@ -752,7 +756,9 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // TODO MAGUS_REVIEW: legacy ΔV label kept for reference.
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.TAPER]: {
       length: {
@@ -767,7 +773,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.UPSET]: {
       length: {
@@ -782,7 +789,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.BEND]: {
       length: null,
@@ -792,7 +800,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.SCROLL]: {
       length: {
@@ -807,7 +816,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.FULLER]: {
       length: {
@@ -822,7 +832,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.FLATTEN]: {
       length: {
@@ -837,7 +848,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.CUT]: {
       length: {
@@ -852,7 +864,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (negative, removed):",
+      // volumeDeltaLabel: "ΔV (negative, removed):",
+      volumeDeltaLabel: "Volume change (ΔV, negative, removed):",
     },
     [FORGE_OPERATION_TYPES.TRIM]: {
       length: {
@@ -867,7 +880,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (negative, removed):",
+      // volumeDeltaLabel: "ΔV (negative, removed):",
+      volumeDeltaLabel: "Volume change (ΔV, negative, removed):",
     },
     [FORGE_OPERATION_TYPES.PUNCH]: {
       length: null,
@@ -877,7 +891,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (negative, removed):",
+      // volumeDeltaLabel: "ΔV (negative, removed):",
+      volumeDeltaLabel: "Volume change (ΔV, negative, removed):",
     },
     [FORGE_OPERATION_TYPES.DRIFT]: {
       length: null,
@@ -887,7 +902,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (small change):",
+      // volumeDeltaLabel: "ΔV (small change):",
+      volumeDeltaLabel: "Volume change (ΔV, small change):",
     },
     [FORGE_OPERATION_TYPES.SLIT]: {
       length: {
@@ -902,7 +918,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (negative, removed):",
+      // volumeDeltaLabel: "ΔV (negative, removed):",
+      volumeDeltaLabel: "Volume change (ΔV, negative, removed):",
     },
     [FORGE_OPERATION_TYPES.SPLIT]: {
       length: null,
@@ -912,7 +929,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.WELD]: {
       length: {
@@ -927,7 +945,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (positive, added):",
+      // volumeDeltaLabel: "ΔV (positive, added):",
+      volumeDeltaLabel: "Volume change (ΔV, positive, added):",
     },
     [FORGE_OPERATION_TYPES.COLLAR]: {
       length: {
@@ -942,12 +961,14 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (positive, added):",
+      // volumeDeltaLabel: "ΔV (positive, added):",
+      volumeDeltaLabel: "Volume change (ΔV, positive, added):",
     },
     [FORGE_OPERATION_TYPES.STRAIGHTEN]: {
       length: null,
       location: null,
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.SECTION_CHANGE]: {
       length: {
@@ -962,7 +983,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (usually ~0):",
+      // volumeDeltaLabel: "ΔV (usually ~0):",
+      volumeDeltaLabel: "Volume change (ΔV, usually ~0):",
     },
     [FORGE_OPERATION_TYPES.FORGE]: {
       length: {
@@ -977,7 +999,8 @@ function setupStepsUI() {
         key: "location",
         numeric: false,
       },
-      volumeDeltaLabel: "ΔV (unknown):",
+      // volumeDeltaLabel: "ΔV (unknown):",
+      volumeDeltaLabel: "Volume change (ΔV, unknown):",
     },
   };
 
