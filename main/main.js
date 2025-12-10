@@ -1647,30 +1647,178 @@ function setupPlannerUI() {
 */
 
 /**
- * Phase 8.4 FINAL: LLM-aware async planner UI wiring.
+ * Phase 8.4 LEGACY: LLM-aware async planner UI wiring (always used LLM path).
+ * Kept for reference; superseded by the toggle-aware version below.
+ */
+// function setupPlannerUI() {
+//   console.log("[Planner] Setting up Generate Forging Plan button (LLM-aware async)…");
+//
+//   const button = document.getElementById("steps-autoplan-btn");
+//   const errorEl = document.getElementById("steps-error");
+//
+//   if (!button) {
+//     console.warn(
+//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
+//     );
+//     return;
+//   }
+//
+//   button.addEventListener("click", async () => {
+//     if (!appState) {
+//       console.error("[Planner] appState is not available.");
+//       return;
+//     }
+//
+//     if (!errorEl) {
+//       console.error("[Planner] steps error element (#steps-error) not found.");
+//     }
+//
+//     if (errorEl) {
+//       clearStepsError(errorEl);
+//     }
+//
+//     const startingStock = appState.startingStock || null;
+//     const targetShape = appState.targetShape || null;
+//
+//     if (!startingStock) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define the starting stock before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     if (!targetShape) {
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Please define a target shape (manual or STL) before generating a forging plan."
+//         );
+//       }
+//       return;
+//     }
+//
+//     const originalLabel = button.textContent;
+//     button.disabled = true;
+//     button.textContent = "Generating plan…";
+//
+//     try {
+//       console.log(
+//         "[Planner] Invoking autoPlanWithLLM(startingStock, targetShape)…"
+//       );
+//       const plannedSteps =
+//         (await autoPlanWithLLM(startingStock, targetShape)) || [];
+//
+//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
+//         if (errorEl) {
+//           showStepsError(
+//             errorEl,
+//             "Planner did not produce any steps. Try adjusting the description or target volume."
+//           );
+//         }
+//         return;
+//       }
+//
+//       // Replace any existing user-defined steps with the planner-generated ones.
+//       clearSteps();
+//
+//       plannedSteps.forEach((step) => {
+//         let concreteStep = step;
+//
+//         // Safety: ensure we always store ForgeStep instances in appState.steps.
+//         if (!(step instanceof ForgeStep)) {
+//           concreteStep = new ForgeStep(
+//             step.operationType,
+//             step.params || {},
+//             startingStock
+//           );
+//         }
+//
+//         addStep(concreteStep);
+//       });
+//
+//       // Phase 8.4: update geometry / storyboard immediately so overlays,
+//       // snapshots, and any future storyboard views respond to the new plan.
+//       recomputeTimeline();
+//
+//       // Ensure the steps panel and target comparison are refreshed.
+//       refreshStepsUI();
+//       refreshTargetUI();
+//     } catch (err) {
+//       console.error("[Planner] autoPlanWithLLM failed with error:", err);
+//       if (errorEl) {
+//         showStepsError(
+//           errorEl,
+//           "Planner encountered an error while generating the forging plan. See console for details."
+//         );
+//       }
+//     } finally {
+//       button.disabled = false;
+//       button.textContent = originalLabel;
+//     }
+//   });
+// }
+
+/**
+ * Phase 8.4 FINAL: Toggle-aware LLM/heuristic planner UI wiring.
  *
- * Uses autoPlanWithLLM(), which:
- *   - prefers the external LLM backend (when configured),
- *   - falls back to heuristic autoPlan() if the backend is missing or fails.
+ * - Respects the "Use local LLM suggestions" checkbox.
+ * - Uses heuristic autoPlan() when LLM is disabled or not configured.
+ * - Uses autoPlanWithLLM() when LLM is enabled and a backend endpoint is set.
+ * - Keeps full fallback behavior inside planner.js (LLM errors → heuristics).
+ * - Updates geometry/storyboard via recomputeTimeline() after planning.
  *
- * UI behavior:
- *   - Validates starting stock + target shape are present.
- *   - Shows button loading state while plan is being generated.
- *   - Replaces existing steps with the new plan.
- *   - Calls recomputeTimeline() so geometry/storyboard update immediately.
- *   - Refreshes steps + target panels.
+ * Phase 9 prep:
+ * - Storyboard animation hooks will attach around recomputeTimeline() and
+ *   the point where appState.steps is replaced by the new plan.
  */
 function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button (LLM-aware async)…");
+  console.log(
+    "[Planner] Setting up Generate Forging Plan button (LLM toggle-aware)…"
+  );
 
   const button = document.getElementById("steps-autoplan-btn");
   const errorEl = document.getElementById("steps-error");
+  const llmToggle = document.getElementById("steps-use-llm");
+  const llmStatusEl = document.getElementById("steps-llm-status");
 
   if (!button) {
     console.warn(
       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
     );
     return;
+  }
+
+  // Initialize LLM status from global config (local-only, no secrets).
+  let hasBackendConfig = false;
+  try {
+    const cfg =
+      typeof window !== "undefined" ? window.FORGE_PLANNER_CONFIG || null : null;
+
+    if (cfg && cfg.endpointUrl) {
+      hasBackendConfig = true;
+      if (llmStatusEl) {
+        const modelPart =
+          typeof cfg.model === "string" && cfg.model.trim()
+            ? ` (model: ${cfg.model.trim()})`
+            : "";
+        llmStatusEl.textContent =
+          "Local LLM endpoint configured" +
+          modelPart +
+          ". Planner will try LLM when enabled.";
+      }
+    } else if (llmStatusEl) {
+      llmStatusEl.textContent =
+        "Local LLM endpoint not configured; planner will use heuristic rules only.";
+    }
+  } catch (cfgErr) {
+    console.warn("[Planner] Error inspecting FORGE_PLANNER_CONFIG:", cfgErr);
+    if (llmStatusEl) {
+      llmStatusEl.textContent =
+        "Could not read local LLM config; planner will use heuristic rules only.";
+    }
   }
 
   button.addEventListener("click", async () => {
@@ -1714,12 +1862,41 @@ function setupPlannerUI() {
     button.disabled = true;
     button.textContent = "Generating plan…";
 
+    const useLLM =
+      !!llmToggle && !!llmToggle.checked && hasBackendConfig === true;
+
+    if (llmStatusEl) {
+      // Reset any previous error-ish wording; simple text only, CSS-neutral.
+      // (Phase 9 could style this more richly.)
+      if (!hasBackendConfig) {
+        llmStatusEl.textContent =
+          "Local LLM endpoint not configured; using heuristic planner.";
+      } else if (useLLM) {
+        llmStatusEl.textContent =
+          "Requesting plan from local LLM (with heuristic safety checks)…";
+      } else {
+        llmStatusEl.textContent =
+          "Local LLM available but disabled; using heuristic planner.";
+      }
+    }
+
     try {
-      console.log(
-        "[Planner] Invoking autoPlanWithLLM(startingStock, targetShape)…"
-      );
-      const plannedSteps =
-        (await autoPlanWithLLM(startingStock, targetShape)) || [];
+      let plannedSteps = [];
+
+      if (useLLM) {
+        console.log(
+          "[Planner] LLM toggle is ON and backend configured; using autoPlanWithLLM."
+        );
+        plannedSteps =
+          (await autoPlanWithLLM(startingStock, targetShape)) || [];
+      } else {
+        console.log(
+          "[Planner] LLM toggle is OFF or backend not configured; using heuristic autoPlan."
+        );
+        // NOTE: autoPlan is synchronous, but awaiting it is harmless and keeps
+        // the code uniform if it ever becomes async.
+        plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
+      }
 
       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
         if (errorEl) {
@@ -1727,6 +1904,10 @@ function setupPlannerUI() {
             errorEl,
             "Planner did not produce any steps. Try adjusting the description or target volume."
           );
+        }
+        if (useLLM && llmStatusEl) {
+          llmStatusEl.textContent =
+            "Local LLM did not return a usable plan; heuristic planner may still be used.";
         }
         return;
       }
@@ -1750,19 +1931,33 @@ function setupPlannerUI() {
       });
 
       // Phase 8.4: update geometry / storyboard immediately so overlays,
-      // snapshots, and any future storyboard views respond to the new plan.
+      // snapshots, and (future) storyboard panels respond to the new plan.
+      // Phase 9 storyboard animation engine will hook into the state/timeline
+      // implied by recomputeTimeline() and appState.stepStockStates.
       recomputeTimeline();
 
       // Ensure the steps panel and target comparison are refreshed.
       refreshStepsUI();
       refreshTargetUI();
+
+      if (useLLM && llmStatusEl) {
+        llmStatusEl.textContent =
+          "Local LLM-assisted plan generated successfully (with heuristic checks).";
+      } else if (llmStatusEl && !useLLM) {
+        llmStatusEl.textContent =
+          "Heuristic-only plan generated successfully.";
+      }
     } catch (err) {
-      console.error("[Planner] autoPlanWithLLM failed with error:", err);
+      console.error("[Planner] planner failed with error:", err);
       if (errorEl) {
         showStepsError(
           errorEl,
           "Planner encountered an error while generating the forging plan. See console for details."
         );
+      }
+      if (useLLM && llmStatusEl) {
+        llmStatusEl.textContent =
+          "Local LLM call failed or server is not running; heuristic planner will be used as fallback next time.";
       }
     } finally {
       button.disabled = false;

@@ -369,9 +369,26 @@
         </button>
       </div>
 
+      <!-- Phase 8: Local LLM toggle + status (no existing UI removed) -->
+      <div class="steps-llm-controls">
+        <label class="checkbox-inline">
+          <input type="checkbox" id="steps-use-llm" />
+          Use local LLM suggestions (experimental)
+        </label>
+        <p
+          id="steps-llm-status"
+          class="steps-llm-status"
+        >
+          <!-- planner.js will update this to reflect LLM availability / errors -->
+        </p>
+      </div>
+
       <p id="steps-error" class="card-error"></p>
 
       <div id="steps-list" class="steps-list"></div>
+      <!-- Phase 9 (Storyboard animation prep):
+           The storyboard drawing/animation engine will attach here to show
+           per-step evolving bar shapes and simple panel thumbnails. -->
       <div id="step-preview-panel" class="step-preview-panel">
         <h3 class="step-preview-title">Step preview (before/after)</h3>
         <p class="step-preview-placeholder">
@@ -432,9 +449,8 @@
        - Instead, point this at your own backend, which then calls OpenAI (or another LLM).
        - Keep any API keys and secrets on the server ONLY. -->
   <script>
-    // TODO MAGUS_REVIEW: configure this in your deployment, not in committed code
-    // if you are going to wire up a real backend. For development you can
-    // temporarily uncomment and point to a local server, e.g.:
+    // TODO MAGUS_REVIEW: original example config kept for reference.
+    // This block showed how to wire a generic backend without committing keys.
     //
     // window.FORGE_PLANNER_CONFIG = {
     //   endpointUrl: "http://localhost:3000/forge-plan",
@@ -444,6 +460,18 @@
     //     // Do NOT put OpenAI or other provider keys here.
     //   },
     // };
+
+    // Phase 8 – Local, offline-first LLM backend configuration.
+    // This assumes a local HTTP server (e.g., Ollama / LM Studio / GPT4All bridge)
+    // running on the same machine. No API keys or secrets live in the frontend.
+    window.FORGE_PLANNER_CONFIG = {
+      endpointUrl: "http://localhost:11434/forge-plan", // TODO MAGUS_REVIEW: adjust path/port to your local bridge
+      model: "llama3:latest",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    };
   </script>
 
   <!-- Main JS entry point (ES module) -->
