@@ -382,16 +382,38 @@ export function renderStepsList(appState, listEl, options = {}) {
         ? Number(step.suggestedVolumeDelta)
         : null;
 
+    // TODO MAGUS_REVIEW: legacy ΔV-only label kept for reference.
+    // if (vol !== null || suggested !== null) {
+    //   let volLine = "";
+    //
+    //   if (vol !== null) {
+    //     volLine += `ΔV: ${formatVolume(vol)}`;
+    //   }
+    //   if (suggested !== null) {
+    //     if (volLine) volLine += " (heuristic ";
+    //     else volLine += "Heuristic ";
+    //     volLine += `ΔV: ${formatVolume(suggested)})`;
+    //   }
+    //
+    //   if (volLine) {
+    //     metaBits.push(volLine);
+    //   }
+    // }
+
+    // New: more user-friendly "Volume change (ΔV)" wording while preserving data.
     if (vol !== null || suggested !== null) {
       let volLine = "";
 
       if (vol !== null) {
-        volLine += `ΔV: ${formatVolume(vol)}`;
+        volLine += `Volume change (ΔV): ${formatVolume(vol)}`;
       }
       if (suggested !== null) {
-        if (volLine) volLine += " (heuristic ";
-        else volLine += "Heuristic ";
-        volLine += `ΔV: ${formatVolume(suggested)})`;
+        if (volLine) {
+          volLine += " (heuristic ";
+        } else {
+          volLine += "Heuristic volume change (ΔV): ";
+        }
+        volLine += `${formatVolume(suggested)})`;
       }
 
       if (volLine) {
