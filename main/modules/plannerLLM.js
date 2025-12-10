@@ -20,7 +20,11 @@
 //     `window.FORGE_PLANNER_CONFIG` in your own app shell.
 
 import { FORGE_OPERATION_TYPES } from "./operations.js";
-import { getAllOperationParamSchemas } from "./forgeStepSchema.js";
+import {
+  getAllOperationParamSchemas,
+  getOperationCatalogForPlanner,
+  FORGE_STEP_SCHEMA_VERSION,
+} from "./forgeStepSchema.js";
 
 /**
  * Shape of the context that planner.js sends here:
@@ -45,6 +49,19 @@ import { getAllOperationParamSchemas } from "./forgeStepSchema.js";
  */
 
 /**
+ * @typedef {Object} PlannerLLMPlainStep
+ * @property {string} operationType                       - one of FORGE_OPERATION_TYPES
+ * @property {Record<string, any>} params                 - canonical params for that operation
+ * @property {string} [rationale]                         - optional short explanation for debugging
+ */
+
+/**
+ * @typedef {Object} PlannerLLMResponse
+ * @property {PlannerLLMPlainStep[]} steps                - normalized steps (may be empty)
+ * @property {string} [notes]                             - optional human-friendly note from backend
+ */
+
+/**
  * INTERNAL SYSTEM "PROMPT" (conceptual only).
  *
  * This is a *specification* of how we want an LLM to behave when
@@ -58,6 +75,15 @@ You receive structured JSON describing:
 - target shape (volume, dimensions, label, STL-derived bounds)
 - coarse geometric deltas and volume budget
 - allowed forging operation types, with canonical parameter keys
+
+You also receive a canonical schema for each forging operation, including:
+- primaryAxis
+- typicalMassChange
+- longitudinal.regionParams and locationParams
+- crossSection.parameters
+- rotation.parameters
+- face.parameters
+Use this schema to pick appropriate operations and parameter keys.
 
 Your job is to output a *short* sequence of forging operations
 that can be executed by the Smithing Storyboarder app.
@@ -75,20 +101,19 @@ Rules:
        }
 
 2. Parameters
-   - Prefer canonical fields:
-       lengthRegion, location, lengthRemoved, collarLength,
-       taperLength, twistDegrees, twistTurns, holeDiameter, etc.
+   - Prefer canonical fields indicated in the schema, for example:
+       lengthRegion, location, distanceFromEnd, lengthRemoved,
+       collarLength, twistDegrees, twistTurns, holeDiameter,
+       tipThickness, tipWidth, grooveDepth, grooveWidth, etc.
    - Follow the semantic hints:
        primaryAxis, longitudinal.regionParams, crossSection.parameters.
    - Avoid invented fields that the app will not understand.
 
 3. Volume & mass behavior
-   - Draw-out, flatten, taper, upset, twist, straightening:
-       mostly conserve volume, minor losses allowed.
-   - Punch, slit, cut, trim:
-       remove volume.
-   - Weld, collar:
-       add volume.
+   - Draw-out, flatten, taper, upset, twist, straightening, setdown,
+     section-change: mostly conserve volume, minor losses allowed.
+   - Punch, slit, cut, trim: remove volume.
+   - Weld, collar: add volume.
    - Keep net volume reasonably close to the target volume.
    - If you must deviate, prefer a small conservative loss.
 
@@ -123,6 +148,10 @@ If information is insufficient, you may output an empty steps list.
  *
  * NOTE: This is the same logic as the original implementation, kept
  * active (not commented) so existing behavior is preserved.
+ *
+ * @param {any} raw
+ * @param {string|null} [defaultOpType]
+ * @returns {PlannerLLMPlainStep|null}
  */
 function normalizePlainStep(raw, defaultOpType = null) {
   if (!raw || typeof raw !== "object") return null;
@@ -263,7 +292,7 @@ function getPlannerBackendConfig() {
  * Main public function used by planner.js
  *
  * @param {object} plannerContext
- * @returns {Promise<{steps: Array<{operationType:string, params:object, rationale?:string}>, notes?: string}>}
+ * @returns {Promise<PlannerLLMResponse>}
  */
 export async function suggestOperationsWithLLM(plannerContext) {
   // Light debug logging: keep it shallow so it doesn't spam the console.
@@ -293,8 +322,13 @@ export async function suggestOperationsWithLLM(plannerContext) {
   const payload = {
     spec: INTERNAL_PLANNER_SPEC.trim(),
     schema: {
+      // NOTE: operations is the enum map (e.g. { DRAW_OUT: "drawOut", ... }).
       operations: FORGE_OPERATION_TYPES,
+      // Detailed per-operation semantics; see forgeStepSchema.js.
       paramSchemas: getAllOperationParamSchemas(),
+      // NEW: explicit schema version + catalog to help the backend stay in sync.
+      schemaVersion: FORGE_STEP_SCHEMA_VERSION,
+      operationCatalog: getOperationCatalogForPlanner(),
     },
     context: plannerContext || null,
   };
@@ -393,5 +427,9 @@ export function getPlannerLLMSchemaBundle() {
   return {
     operations: FORGE_OPERATION_TYPES,
     paramSchemas: getAllOperationParamSchemas(),
+    // NEW: include same extras the main payload uses so tools/backends
+    // can introspect them without making a live planner call.
+    schemaVersion: FORGE_STEP_SCHEMA_VERSION,
+    operationCatalog: getOperationCatalogForPlanner(),
   };
 }

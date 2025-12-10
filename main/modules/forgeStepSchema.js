@@ -41,6 +41,58 @@ function deepFreeze(obj) {
 }
 
 /**
+ * @typedef {"length"|"cross"|"rotation"|"point"|"generic"} ForgePrimaryAxis
+ */
+
+/**
+ * @typedef {"conserved"|"removed"|"added"|"mixed"} ForgeTypicalMassChange
+ */
+
+/**
+ * @typedef {Object} ForgeLongitudinalSemantics
+ * @property {boolean} hasRegion
+ * @property {string[]} regionParams
+ * @property {string[]} locationParams
+ */
+
+/**
+ * @typedef {Object} ForgeCrossSectionSemantics
+ * @property {boolean} affectsCrossSection
+ * @property {string[]} parameters
+ */
+
+/**
+ * @typedef {Object} ForgeRotationSemantics
+ * @property {boolean} hasTwist
+ * @property {string[]} parameters
+ */
+
+/**
+ * @typedef {Object} ForgeFaceSemantics
+ * @property {boolean} usesFace
+ * @property {string[]} parameters
+ */
+
+/**
+ * @typedef {Object} ForgeParamHints
+ * @property {string[]} required
+ * @property {string[]} optional
+ */
+
+/**
+ * @typedef {Object} OperationParamSchema
+ * @property {string} id                          - operation type constant
+ * @property {ForgePrimaryAxis} primaryAxis       - main axis this op works along
+ * @property {ForgeTypicalMassChange} typicalMassChange
+ * @property {ForgeLongitudinalSemantics} longitudinal
+ * @property {ForgeCrossSectionSemantics} crossSection
+ * @property {ForgeRotationSemantics} rotation
+ * @property {ForgeFaceSemantics} face
+ * @property {ForgeParamHints} paramHints
+ * @property {string} notes                       - human description
+ */
+
+/**
  * Canonical parameter + axis semantics for each supported operation.
  *
  * Fields:
@@ -64,6 +116,8 @@ function deepFreeze(obj) {
  *     - required: string[]           – keys that should be provided for planning
  *     - optional: string[]           – nice-to-have extras
  *   notes: string                    – human description of what this op means
+ *
+ * @type {Record<string, OperationParamSchema>}
  */
 const SCHEMA = {
   [FORGE_OPERATION_TYPES.DRAW_OUT]: {
@@ -764,10 +818,17 @@ const SCHEMA = {
 deepFreeze(SCHEMA);
 
 /**
+ * Schema version identifier for planner/LLM coordination.
+ * Increment this if the semantic structure of SCHEMA changes
+ * in a way that backend logic should be aware of.
+ */
+export const FORGE_STEP_SCHEMA_VERSION = "1.0.0";
+
+/**
  * Get the semantic schema for a given operation type, if available.
  *
  * @param {string} operationType
- * @returns {object|null}
+ * @returns {OperationParamSchema|null}
  */
 export function getOperationParamSchema(operationType) {
   if (!operationType) return null;
@@ -777,7 +838,37 @@ export function getOperationParamSchema(operationType) {
 /**
  * Return the full (frozen) schema map.
  * Safe to share as it is deeply frozen.
+ *
+ * @returns {Record<string, OperationParamSchema>}
  */
 export function getAllOperationParamSchemas() {
   return SCHEMA;
+}
+
+/**
+ * Return a stable, planner-friendly catalog of operations.
+ *
+ * This is essentially a normalized view of SCHEMA that the planner
+ * or plannerLLM.js can JSON.stringify directly when talking to the
+ * backend, without needing to know about the internal SCHEMA shape.
+ *
+ * NOTE: The returned objects are still the frozen schema entries,
+ * so they should be treated as read-only.
+ *
+ * @returns {OperationParamSchema[]}
+ */
+export function getOperationCatalogForPlanner() {
+  // Object.keys gives deterministic ordering in modern JS, which is
+  // helpful for making LLM payloads stable between runs.
+  return Object.keys(SCHEMA).map((key) => SCHEMA[key]);
+}
+
+/**
+ * Convenience helper to list all operation type ids that have schemas.
+ * Planner can use this to intersect with FORGE_OPERATION_TYPES if needed.
+ *
+ * @returns {string[]}
+ */
+export function getSchemaOperationTypeIds() {
+  return Object.keys(SCHEMA);
 }
