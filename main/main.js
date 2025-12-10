@@ -13,7 +13,12 @@ import {
 } from "./modules/operations.js";
 import { parseSTLFile } from "./modules/cadParser.js";
 import { computeStockVolume } from "./modules/volumeEngine.js";
-import { setupCadPreviewCanvas } from "./modules/cadPreview.js";
+// TODO MAGUS_REVIEW: legacy single-function CAD preview import kept for reference.
+// import { setupCadPreviewCanvas } from "./modules/cadPreview.js";
+import {
+  setupCadPreviewCanvas,
+  startCadPreviewFromFile,
+} from "./modules/cadPreview.js";
 import {
   appState,
   setStartingStock,
@@ -134,9 +139,9 @@ function updateStepPreviewPanelForStep(stepIndex) {
   if (!panel) return;
 
   const placeholder = panel.querySelector(".step-preview-placeholder");
-  // TODO MAGUS_REVIEW: legacy lookup only matched "step-preview-overlay";
-  // updated to also catch the default "step-preview-svg" class so we remove
-  // any existing overlay before adding a new one.
+  // TODO MAGUS_REVIEW: legacy lookup only matched 'step-preview-overlay'.
+  // Updated to also consider 'step-preview-svg' so we always remove the old
+  // overlay before appending a new one.
   // const existingSvg = panel.querySelector("svg.step-preview-overlay");
   const existingSvg =
     panel.querySelector("svg.step-preview-overlay") ||
@@ -441,13 +446,17 @@ function setupCadImport() {
 
     try {
       // TODO MAGUS_REVIEW: legacy text-based STL parsing kept for reference.
-      // Previously we read the file as text and passed a string into
-      // parseSTLFile, which actually expects a File for binary/ASCII parsing.
       // const text = await file.text();
       // const parsed = parseSTLFile(text);
+      // if (!parsed || !parsed.volume || !parsed.bounds) {
+      //   showTargetError(
+      //     "Could not extract volume / bounds from STL. Please check the file.",
+      //     errorEl
+      //   );
+      //   return;
+      // }
       //
-      // New behavior: await parseSTLFile(file) with the File object so we
-      // can parse both binary and ASCII STL and compute volume/bounds.
+      // const target = TargetShape.fromStlMetadata(parsed, units);
 
       const parsed = await parseSTLFile(file);
 
@@ -458,11 +467,6 @@ function setupCadImport() {
         );
         return;
       }
-
-      // TODO MAGUS_REVIEW: legacy TargetShape.fromStlMetadata call kept
-      // for context. The current TargetShape class does not expose this
-      // helper, so we construct the TargetShape directly.
-      // const target = TargetShape.fromStlMetadata(parsed, units);
 
       const target = new TargetShape({
         sourceType: "cad",
@@ -484,6 +488,13 @@ function setupCadImport() {
       setTargetShape(target);
       refreshTargetUI();
       refreshStepsUI();
+
+      // Kick off CAD canvas preview for the imported STL.
+      try {
+        startCadPreviewFromFile(file);
+      } catch (previewErr) {
+        console.warn("[CAD] STL imported but preview failed:", previewErr);
+      }
 
       console.log("[CAD] Imported STL target:", target);
     } catch (err) {
@@ -1021,12 +1032,17 @@ function setupStepsUI() {
     const massChangeType = getOperationMassChangeType(operationType);
 
     try {
-      const step = new ForgeStep(operationType, params, appState.startingStock || null, {
-        description: description || "",
-        units,
-        volumeDeltaHint: volumeDelta,
-        massChangeTypeOverride: massChangeType,
-      });
+      const step = new ForgeStep(
+        operationType,
+        params,
+        appState.startingStock || null,
+        {
+          description: description || "",
+          units,
+          volumeDeltaHint: volumeDelta,
+          massChangeTypeOverride: massChangeType,
+        }
+      );
 
       addStep(step);
       refreshStepsUI();
@@ -1547,7 +1563,9 @@ function setupPlannerUI() {
     }
 
     try {
-      console.log("[Planner] Invoking async autoPlan(startingStock, targetShape)…");
+      console.log(
+        "[Planner] Invoking async autoPlan(startingStock, targetShape)…"
+      );
       const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
 
       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
