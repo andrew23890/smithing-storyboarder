@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smithing Storyboarder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Smithing Storyboarder</h1>
+    <p class="app-tagline">From bar stock to forged story, one step at a time.</p>
+  </header>
+
+  <main class="app-main">
+    <!-- Quick Hello / Wiring Check -->
+    <section class="card">
+      <h2>Hello / Wiring Check</h2>
+      <p class="card-intro">
+        Use this to confirm that JavaScript is wired up correctly.
+      </p>
+      <div class="card-actions">
+        <button id="hello-button" class="primary-btn">
+          Say hello
+        </button>
+      </div>
+      <p id="hello-output" class="hello-output"></p>
+    </section>
+
+    <!-- Starting Stock -->
+    <section class="card">
+      <h2>Starting Stock</h2>
+      <p class="card-intro">
+        Define the bar you are starting from. The app will use this to compute volume
+        and to simulate geometry changes along the bar.
+      </p>
+
+      <div class="stock-form-grid">
+        <!-- Material -->
+        <div class="field">
+          <label for="material">Material</label>
+          <select id="material">
+            <option value="">Select material…</option>
+            <option value="mild_steel">Mild steel</option>
+            <option value="medium_steel">Medium carbon steel</option>
+            <option value="high_steel">High carbon steel</option>
+            <option value="other">Other / unknown</option>
+          </select>
+          <p id="stock-material-error" class="field-error-message"></p>
+        </div>
+
+        <!-- Shape -->
+        <div class="field">
+          <label for="stock-shape">Stock shape</label>
+          <select id="stock-shape">
+            <option value="">Select shape…</option>
+            <option value="square">Square bar</option>
+            <option value="round">Round bar</option>
+            <option value="flat">Flat / rectangular bar</option>
+          </select>
+          <p id="stock-shape-error" class="field-error-message"></p>
+        </div>
+
+        <!-- Dim A -->
+        <div class="field">
+          <label for="stock-dimA">Primary dimension</label>
+          <input
+            id="stock-dimA"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. 0.625 for 5/8&quot;"
+          />
+          <p id="stock-dim-a-error" class="field-error-message"></p>
+        </div>
+
+        <!-- Dim B (optional for square / round) -->
+        <div class="field" id="stock-dimB-wrapper">
+          <label for="stock-dimB">Secondary dimension</label>
+          <input
+            id="stock-dimB"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. width for flat bar"
+          />
+          <p id="stock-dim-b-error" class="field-error-message"></p>
+        </div>
+
+        <!-- Length -->
+        <div class="field">
+          <label for="stock-length">Length</label>
+          <input
+            id="stock-length"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. 30 for 30&quot; long bar"
+          />
+          <p id="stock-length-error" class="field-error-message"></p>
+        </div>
+
+        <!-- Units -->
+        <div class="field">
+          <label for="stock-units">Units</label>
+          <select id="stock-units">
+            <option value="">Select units…</option>
+            <option value="in">Inches</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+          </select>
+          <p id="stock-units-error" class="field-error-message"></p>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button id="stock-submit" class="primary-btn">
+          Set starting stock
+        </button>
+      </div>
+
+      <p id="stock-error" class="card-error"></p>
+      <div id="stock-summary" class="stock-summary"></div>
+    </section>
+
+    <!-- Target Shape (Manual) -->
+    <section class="card">
+      <h2>Target Shape (Manual)</h2>
+      <p class="card-intro">
+        Describe the final forged piece. For the early phases, we mainly care about a
+        label, approximate volume, and any notes you want to remember.
+      </p>
+
+      <div class="target-form-grid">
+        <div class="field">
+          <label for="target-label">Name / label</label>
+          <input
+            id="target-label"
+            type="text"
+            placeholder="e.g. S-hook, leaf keychain, steak flipper"
+          />
+        </div>
+
+        <!-- Optional dimensions (used by setupTargetShapeForm in main.js) -->
+        <div class="field">
+          <label for="target-length">Approx. length (optional)</label>
+          <input
+            id="target-length"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. overall length"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-width">Approx. width (optional)</label>
+          <input
+            id="target-width"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. widest part"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-thickness">Approx. thickness (optional)</label>
+          <input
+            id="target-thickness"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="e.g. thickest section"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-volume">Approximate volume</label>
+          <input
+            id="target-volume"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="0.000"
+          />
+        </div>
+
+        <div class="field">
+          <label for="target-units">Volume units</label>
+          <select id="target-units">
+            <option value="in">Inches³</option>
+            <option value="mm">Millimeters³</option>
+            <option value="cm">Centimeters³</option>
+          </select>
+        </div>
+
+        <div class="field field-span-2">
+          <label for="target-notes">Notes (optional)</label>
+          <textarea
+            id="target-notes"
+            rows="3"
+            placeholder="Any extra description – tapers, scrolls, twists, holes, etc."
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button id="target-submit" class="primary-btn">
+          Set manual target shape
+        </button>
+      </div>
+
+      <p id="target-error" class="card-error"></p>
+
+      <div class="target-summary-layout">
+        <div id="target-summary" class="stock-summary"></div>
+        <div id="target-compare" class="stock-summary"></div>
+      </div>
+    </section>
+
+    <!-- Target Shape (STL / CAD Import) -->
+    <section class="card">
+      <h2>Target Shape (STL Import)</h2>
+      <p class="card-intro">
+        Import a simple STL mesh as the target shape. The app extracts a volume and
+        bounding box to compare against your starting stock.
+      </p>
+
+      <div class="cad-form-grid">
+        <div class="field">
+          <label for="cad-file">STL file</label>
+          <input id="cad-file" type="file" accept=".stl" />
+        </div>
+
+        <div class="field">
+          <label for="cad-units">STL units</label>
+          <select id="cad-units">
+            <option value="">Select units…</option>
+            <option value="mm">Millimeters</option>
+            <option value="cm">Centimeters</option>
+            <option value="in">Inches</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="cad-label">Label (optional)</label>
+          <input
+            id="cad-label"
+            type="text"
+            placeholder="e.g. CAD model from Fusion"
+          />
+        </div>
+
+        <div class="field field-span-2">
+          <label for="cad-notes">Notes (optional)</label>
+          <textarea
+            id="cad-notes"
+            rows="3"
+            placeholder="Optional short description of what this CAD file represents."
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button id="cad-import-button" class="primary-btn">
+          Import STL as target
+        </button>
+      </div>
+
+      <p id="cad-error" class="card-error"></p>
+
+      <div class="cad-summary-layout">
+        <div id="cad-summary" class="stock-summary"></div>
+        <div class="cad-preview-wrapper">
+          <canvas id="cad-preview" width="260" height="200"></canvas>
+          <p class="cad-preview-hint">
+            This is a deliberately simplified spinning wireframe to help you visually confirm the
+            imported shape. It is not a full CAD viewer.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Forging Steps -->
+    <section class="card">
+      <h2>Forging Steps</h2>
+      <p class="card-intro">
+        Add the major forging operations you plan to perform. The volume budget panel
+        will help you see whether your plan matches the material you have.<br />
+        Phase 8 adds an experimental planner that can generate a full step plan for you.
+      </p>
+
+      <div class="steps-form-grid">
+        <!-- Operation -->
+        <div class="field">
+          <label for="step-operation">Operation</label>
+          <select id="step-operation">
+            <!-- Populated from operations.js -->
+          </select>
+        </div>
+
+        <!-- Optional length parameter -->
+        <div class="field">
+          <label for="steps-param-length">Length affected (optional)</label>
+          <input
+            id="steps-param-length"
+            type="text"
+            placeholder="e.g. 3&quot; at tip, 4&quot; middle, etc."
+          />
+        </div>
+
+        <!-- Optional location / direction parameter -->
+        <div class="field">
+          <label for="steps-param-location">Location / direction (optional)</label>
+          <input
+            id="steps-param-location"
+            type="text"
+            placeholder="e.g. near tip, mid-bar, at shoulder…"
+          />
+        </div>
+
+        <!-- Description -->
+        <div class="field field-span-2">
+          <label for="step-description">Short description</label>
+          <textarea
+            id="step-description"
+            rows="2"
+            placeholder="e.g. Draw out last 4&quot; to a taper"
+          ></textarea>
+        </div>
+
+        <!-- Volume delta -->
+        <div class="field">
+          <label for="step-delta-volume" id="steps-volume-delta-label">ΔV</label>
+          <input
+            id="step-delta-volume"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="0"
+          />
+          <p class="field-hint">
+            If mass is conserved, leave this at 0. For cutting, punching, etc., estimate
+            how much material is removed.
+          </p>
+        </div>
+
+        <!-- Units for step volume -->
+        <div class="field">
+          <label for="step-units">Step volume units</label>
+          <select id="step-units">
+            <option value="in">Inches³</option>
+            <option value="mm">Millimeters³</option>
+            <option value="cm">Centimeters³</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card-actions card-actions-spaced">
+        <button id="step-add-btn" class="primary-btn">
+          Add step
+        </button>
+        <button id="steps-clear-btn" class="secondary-btn">
+          Clear all steps
+        </button>
+        <button id="steps-autoplan-btn" class="secondary-btn">
+          Generate forging plan
+        </button>
+      </div>
+
+      <!-- Phase 8: Local LLM toggle + status (no existing UI removed) -->
+      <div class="steps-llm-controls">
+        <label class="checkbox-inline">
+          <input type="checkbox" id="steps-use-llm" />
+          Use local LLM suggestions (experimental)
+        </label>
+        <p
+          id="steps-llm-status"
+          class="steps-llm-status"
+        >
+          <!-- planner.js will update this to reflect LLM availability / errors -->
+        </p>
+      </div>
+
+      <p id="steps-error" class="card-error"></p>
+
+      <div id="steps-list" class="steps-list"></div>
+      <!-- Phase 9 (Storyboard animation prep):
+           The storyboard drawing/animation engine will attach here to show
+           per-step evolving bar shapes and simple panel thumbnails. -->
+      <div id="step-preview-panel" class="step-preview-panel">
+        <h3 class="step-preview-title">Step preview (before/after)</h3>
+        <p class="step-preview-placeholder">
+          Click or hover a step to see a simplified before/after outline of the bar here.
+        </p>
+      </div>
+      <div id="steps-volume-summary" class="stock-summary"></div>
+    </section>
+
+    <!-- Geometry Simulation -->
+    <section class="card">
+      <h2>Geometry Simulation (v0.1)</h2>
+      <p class="card-intro">
+        Run the simple geometry engine on your starting stock and steps. This treats
+        the bar as idealized segments and gives you a textual narrative of how the shape
+        evolves.
+      </p>
+
+      <div class="card-actions">
+        <button id="geom-simulate-btn" class="primary-btn">
+          Run geometry simulation
+        </button>
+      </div>
+
+      <p id="geom-error" class="card-error"></p>
+      <pre id="geom-output" class="geom-output"></pre>
+    </section>
+
+    <!-- Roadmap / Status (informational only) -->
+    <section class="card">
+      <h2>Roadmap Snapshot</h2>
+      <p class="card-intro">
+        This is a rough roadmap of where the app is headed. Some boxes are already
+        checked as features are implemented.
+      </p>
+      <ul class="roadmap-list">
+        <li>✅ Phase 0: Basic HTML layout and wiring</li>
+        <li>✅ Phase 1: Starting stock definition &amp; volume</li>
+        <li>✅ Phase 2: Target shape definition &amp; comparison</li>
+        <li>✅ Phase 3: Steps list, mass behavior, &amp; volume budget</li>
+        <li>✅ Phase 4: Geometry engine (1D bar model) &amp; snapshots</li>
+        <li>✅ Phase 5: App state, constraints, and heuristic preview</li>
+        <li>✅ Phase 6: CAD/STL import and spinning preview</li>
+        <li>⬜ Phase 7: Storyboard drawings &amp; thumbnails</li>
+        <li>⬜ Phase 8: Autonomous forging planner (this page)</li>
+        <li>⬜ Phase 9: Local save/load &amp; sharing</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <small>Smithing Storyboarder &middot; ForgeAI helper loaded</small>
+  </footer>
+
+  <!-- Phase 8.5: LLM planner backend configuration hook.
+       NOTE:
+       - This does NOT talk directly to OpenAI from the browser.
+       - Instead, point this at your own backend, which then calls OpenAI (or another LLM).
+       - Keep any API keys and secrets on the server ONLY. -->
+  <script>
+    // TODO MAGUS_REVIEW: original example config kept for reference.
+    // This block showed how to wire a generic backend without committing keys.
+    //
+    // window.FORGE_PLANNER_CONFIG = {
+    //   endpointUrl: "http://localhost:3000/forge-plan",
+    //   method: "POST",
+    //   headers: {
+    //     // Your backend may expect auth headers or none at all.
+    //     // Do NOT put OpenAI or other provider keys here.
+    //   },
+    // };
+
+    // Phase 8 – Local, offline-first LLM backend configuration.
+    // This assumes a local HTTP server (e.g., Ollama / LM Studio / GPT4All bridge)
+    // running on the same machine. No API keys or secrets live in the frontend.
+    // For Ollama 8B, you might use a model tag like "llama3.1:8b" after
+    // running:  ollama pull llama3.1:8b
+    window.FORGE_PLANNER_CONFIG = {
+      endpointUrl: "http://localhost:11434/forge-plan", // TODO MAGUS_REVIEW: adjust path/port to your local bridge
+      model: "llama3.1:8b", // TODO MAGUS_REVIEW: example Ollama 8B model tag; adjust to match your local model
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    };
+  </script>
+
+  <!-- Main JS entry point (ES module) -->
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
