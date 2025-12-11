@@ -12,6 +12,7 @@
 //       - Are compatible with the existing geometry, volume, and constraints
 //         engines (no new requirements on other modules)
 //
+//
 // IMPORTANT NOTES:
 //   - This is intentionally heuristic and "storyboard-grade", not a
 //     fully optimal or mathematically exact planning system.
@@ -671,6 +672,11 @@ function materializeStepsFromSpecs(startingStock, specs) {
  *
  * This does NOT mutate appState or the ForgeStep's constraint fields.
  * AppState will perform its own authoritative recompute later.
+ *
+ * Phase 9 note:
+ *   Storyboard / animation in Phase 9 can reuse this same simulation
+ *   surface (barStateFromStock + applyStepsToBar) to drive animated
+ *   timelines without needing to know planner internals.
  */
 function simulatePlanForDiagnostics(startingStock, steps, targetShape) {
   const diagnostics = {
@@ -776,6 +782,12 @@ function simulatePlanForDiagnostics(startingStock, steps, targetShape) {
 /**
  * Attach non-breaking diagnostics metadata to each step.
  * This does NOT change any fields used by UI/serialization today.
+ *
+ * Phase 9 note:
+ *   storyboard / animation UIs can treat `plannerDiagnostics` as an
+ *   opaque bag indicating which frames/steps deserve attention
+ *   (errors, warnings, geometryOk), without needing to know how the
+ *   plan was generated.
  */
 function attachPlannerDiagnostics(steps, analysis, diagnostics) {
   if (!Array.isArray(steps)) return;
@@ -979,6 +991,12 @@ export function autoPlan(startingStock, targetShape) {
  * Build the richer plannerContext object expected by plannerLLM.js.
  * This is separate from buildPlannerLLMContext() to avoid breaking
  * legacy behavior and to keep all the "real" LLM wiring in one place.
+ *
+ * Phase 9 note:
+ *   A future storyboard module can re-use this same context shape to
+ *   generate per-step animation hints (e.g., where along the bar the
+ *   action is, which face, what primaryAxis), without needing to know
+ *   about Ollama or any other backend details.
  */
 function buildPlannerContextForLLM(startingStock, targetShape, analysis) {
   const startingStockSnapshot = startingStock
@@ -1173,18 +1191,17 @@ async function maybeUseLLMPlanAsync(startingStock, targetShape, analysis) {
 }
 
 /**
- * NEW public async entrypoint:
+ * NEW public async entrypoint (LEGACY SIMPLE VERSION, preserved for reference):
  *
  *   autoPlanWithLLM(startingStock, targetShape) → Promise<ForgeStep[]>
  *
- * This is the Phase 8.5-complete planner:
- *   - Tries to get a plan from the configured LLM backend.
- *   - If that fails in any way, falls back to the existing heuristic
- *     autoPlan() so the app still works offline / without config.
+ * This older version:
+ *   - Tried to get a plan from the LLM backend.
+ *   - Fell back to heuristic autoPlan() if LLM failed.
  *
- * Existing code that calls autoPlan() remains synchronous and heuristic-only.
- * The UI can opt into LLM behavior by calling autoPlanWithLLM() instead.
+ * It did NOT combine the two plans. The new version below does.
  */
+/*
 export async function autoPlanWithLLM(startingStock, targetShape) {
   if (!startingStock || !targetShape) {
     console.warn(
@@ -1210,4 +1227,168 @@ export async function autoPlanWithLLM(startingStock, targetShape) {
     "[planner] LLM plan unavailable; falling back to heuristic autoPlan()."
   );
   return autoPlan(startingStock, targetShape);
+}
+*/
+
+/**
+ * Helper to combine heuristic scaffold steps with LLM-suggested refinements.
+ *
+ * Strategy:
+ *   - If either side is missing, return the other.
+ *   - Otherwise:
+ *       • keep ALL heuristic steps (volume scaffold & basic shaping),
+ *         tagging them as strategy: "heuristic".
+ *       • append LLM steps that either:
+ *            - use operationTypes not already present in the heuristic plan, OR
+ *            - are "detail" operations (punch, drift, scroll, fullers, collar, etc.).
+ *       • re-run diagnostics on the combined plan.
+ *
+ * Phase 9 note:
+ *   storyboard / animation code can treat plannerMeta.strategy and the
+ *   combined diagnostics as hints for which frames to emphasize (e.g.,
+ *   detail operations vs. gross shaping).
+ */
+function combineHeuristicAndLLMPlans(
+  heuristicSteps,
+  llmSteps,
+  startingStock,
+  targetShape,
+  analysis
+) {
+  if (!Array.isArray(heuristicSteps) || heuristicSteps.length === 0) {
+    return Array.isArray(llmSteps) ? llmSteps : [];
+  }
+  if (!Array.isArray(llmSteps) || llmSteps.length === 0) {
+    return heuristicSteps;
+  }
+
+  const combined = [];
+
+  // Tag and include all heuristic steps.
+  for (const step of heuristicSteps) {
+    if (!step) continue;
+    step.plannerMeta = {
+      ...(step.plannerMeta || {}),
+      strategy: step.plannerMeta && step.plannerMeta.strategy
+        ? step.plannerMeta.strategy
+        : "heuristic",
+      combinedWithLLM: true,
+    };
+    combined.push(step);
+  }
+
+  const heuristicOps = new Set(
+    heuristicSteps
+      .filter((s) => s && s.operationType)
+      .map((s) => s.operationType)
+  );
+
+  // Detail-oriented operations we especially want to keep from the LLM,
+  // even if the heuristic plan uses the same operationType elsewhere.
+  const DETAIL_OPS = new Set([
+    FORGE_OPERATION_TYPES.PUNCH,
+    FORGE_OPERATION_TYPES.DRIFT,
+    FORGE_OPERATION_TYPES.FULLER,
+    FORGE_OPERATION_TYPES.SCROLL,
+    FORGE_OPERATION_TYPES.TWIST,
+    FORGE_OPERATION_TYPES.COLLAR,
+    FORGE_OPERATION_TYPES.SLIT,
+    FORGE_OPERATION_TYPES.SPLIT,
+    FORGE_OPERATION_TYPES.BEND,
+  ]);
+
+  for (const step of llmSteps) {
+    if (!step || !step.operationType) continue;
+    const op = step.operationType;
+
+    const keep =
+      !heuristicOps.has(op) || DETAIL_OPS.has(op);
+
+    if (!keep) {
+      continue;
+    }
+
+    step.plannerMeta = {
+      ...(step.plannerMeta || {}),
+      strategy: step.plannerMeta && step.plannerMeta.strategy
+        ? step.plannerMeta.strategy
+        : "llm",
+      combinedWithHeuristics: true,
+    };
+
+    combined.push(step);
+  }
+
+  // Recompute diagnostics for the combined plan so Phase 9 and the UI
+  // see a coherent final story of warnings/errors and geometryOk.
+  const diagnostics = simulatePlanForDiagnostics(
+    startingStock,
+    combined,
+    targetShape
+  );
+  attachPlannerDiagnostics(combined, analysis, diagnostics);
+
+  return combined;
+}
+
+/**
+ * NEW public async entrypoint:
+ *
+ *   autoPlanWithLLM(startingStock, targetShape) → Promise<ForgeStep[]>
+ *
+ * Phase 8.5–8.7 complete behavior:
+ *   - Runs the existing heuristic autoPlan() to build a scaffold.
+ *   - Tries to get an LLM plan from the configured local backend
+ *     (e.g., Ollama 8B running via FORGE_PLANNER_CONFIG).
+ *   - If the LLM plan is unavailable or empty, returns the heuristic
+ *     plan exactly as before (offline-friendly).
+ *   - If both plans exist, combines them via combineHeuristicAndLLMPlans(),
+ *     so the final storyboard reflects both volume scaffolding and
+ *     LLM refinements.
+ */
+export async function autoPlanWithLLM(startingStock, targetShape) {
+  if (!startingStock || !targetShape) {
+    console.warn(
+      "[planner] autoPlanWithLLM called without both startingStock and targetShape."
+    );
+    return [];
+  }
+
+  const analysis = analyzeTargetFeatures(startingStock, targetShape);
+
+  // 1) Heuristic scaffold (synchronous, same behavior as Phase 8.2).
+  const heuristicSteps = autoPlan(startingStock, targetShape);
+
+  // 2) LLM-suggested refinements (async, via local backend).
+  const llmSteps = await maybeUseLLMPlanAsync(
+    startingStock,
+    targetShape,
+    analysis
+  );
+
+  if (!Array.isArray(llmSteps) || llmSteps.length === 0) {
+    console.log(
+      "[planner] LLM plan unavailable; using heuristic plan only."
+    );
+    return Array.isArray(heuristicSteps) ? heuristicSteps : [];
+  }
+
+  if (!Array.isArray(heuristicSteps) || heuristicSteps.length === 0) {
+    console.log(
+      "[planner] Heuristic plan empty; using LLM plan only."
+    );
+    return llmSteps;
+  }
+
+  console.log(
+    "[planner] Combining heuristic scaffold with LLM-suggested refinements."
+  );
+
+  return combineHeuristicAndLLMPlans(
+    heuristicSteps,
+    llmSteps,
+    startingStock,
+    targetShape,
+    analysis
+  );
 }

@@ -2,6 +2,7 @@
 //
 // Phase 8.5 — LLM backend (INTERNAL ONLY)
 //
+//
 // This module defines a *purely internal* interface for an autonomous
 // planner-style LLM. The idea is:
 //
@@ -276,11 +277,54 @@ function getPlannerBackendConfig() {
     headers["Content-Type"] = "application/json";
   }
 
+  // NEW: Surface model (e.g. "llama3:latest") so we can:
+  //  - include it in payloads to local backends, and
+  //  - expose it for diagnostics.
+  const model =
+    typeof cfg.model === "string" && cfg.model.trim()
+      ? cfg.model.trim()
+      : null;
+
   return {
     enabled: true,
     endpointUrl,
     method,
     headers,
+    model,
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * Debug / diagnostic helper (Phase 8.2 / 8.6 support)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Best-effort helper to expose the last known LLM planner status on window.
+ *
+ * This is intentionally **not** part of the public planner.js API; it is
+ * just a debugging / tooling hook for UI or devtools:
+ *
+ *   window.FORGE_PLANNER_LAST_STATUS = {
+ *     ok: boolean,
+ *     stage: "config" | "network" | "http" | "parse" | "success" | "empty",
+ *     reason?: string,
+ *     model?: string | null,
+ *     ts: number,  // ms since epoch
+ *   }
+ */
+function updateLastPlannerLLMStatus(patch) {
+  if (typeof window === "undefined") return;
+
+  const prev =
+    window.FORGE_PLANNER_LAST_STATUS &&
+    typeof window.FORGE_PLANNER_LAST_STATUS === "object"
+      ? window.FORGE_PLANNER_LAST_STATUS
+      : {};
+
+  window.FORGE_PLANNER_LAST_STATUS = {
+    ...prev,
+    ...patch,
+    ts: Date.now(),
   };
 }
 
@@ -289,11 +333,9 @@ function getPlannerBackendConfig() {
  * ---------------------------------------------------------------------- */
 
 /**
- * Main public function used by planner.js
- *
- * @param {object} plannerContext
- * @returns {Promise<PlannerLLMResponse>}
+ * LEGACY REAL IMPLEMENTATION (pre-toggle diagnostics), preserved for reference.
  */
+/*
 export async function suggestOperationsWithLLM(plannerContext) {
   // Light debug logging: keep it shallow so it doesn't spam the console.
   console.log("[PlannerLLM] suggestOperationsWithLLM invoked.", {
@@ -400,6 +442,181 @@ export async function suggestOperationsWithLLM(plannerContext) {
   console.log("[PlannerLLM] LLM backend produced steps:", {
     count: normalizedSteps.length,
   });
+
+  return {
+    steps: normalizedSteps,
+    notes,
+  };
+}
+*/
+
+/**
+ * Main public function used by planner.js
+ *
+ * Phase 8.2 / 8.6 upgraded behavior:
+ *   - Uses FORGE_PLANNER_CONFIG.model when present.
+ *   - Writes diagnostic crumbs to window.FORGE_PLANNER_LAST_STATUS.
+ *   - Returns { steps: [], notes } on any failure so planner.js can safely
+ *     fall back to the heuristic planner.
+ *
+ * @param {object} plannerContext
+ * @returns {Promise<PlannerLLMResponse>}
+ */
+export async function suggestOperationsWithLLM(plannerContext) {
+  // Light debug logging: keep it shallow so it doesn't spam the console.
+  console.log("[PlannerLLM] suggestOperationsWithLLM invoked.", {
+    hasContext: !!plannerContext,
+    allowedOpsCount: Array.isArray(plannerContext?.allowedOperations)
+      ? plannerContext.allowedOperations.length
+      : null,
+    maxSteps: plannerContext?.maxSteps ?? null,
+  });
+
+  const backendCfg = getPlannerBackendConfig();
+  if (!backendCfg.enabled) {
+    console.warn(
+      "[PlannerLLM] Backend not configured; returning empty LLM plan. Reason:",
+      backendCfg.reason
+    );
+    updateLastPlannerLLMStatus({
+      ok: false,
+      stage: "config",
+      reason: backendCfg.reason,
+      model: null,
+    });
+    return {
+      steps: [],
+      notes:
+        "LLM backend not configured; heuristic planner should be used as fallback.",
+    };
+  }
+
+  // Build payload for your backend. The backend can then turn this into
+  // an actual LLM prompt however it chooses.
+  const payload = {
+    spec: INTERNAL_PLANNER_SPEC.trim(),
+    schema: {
+      // NOTE: operations is the enum map (e.g. { DRAW_OUT: "drawOut", ... }).
+      operations: FORGE_OPERATION_TYPES,
+      // Detailed per-operation semantics; see forgeStepSchema.js.
+      paramSchemas: getAllOperationParamSchemas(),
+      // Explicit schema version + catalog to help the backend stay in sync.
+      schemaVersion: FORGE_STEP_SCHEMA_VERSION,
+      operationCatalog: getOperationCatalogForPlanner(),
+    },
+    context: plannerContext || null,
+    // NEW: hint to your local backend about which model to use.
+    backend: {
+      model: backendCfg.model || null,
+    },
+  };
+
+  let response;
+  try {
+    response = await fetch(backendCfg.endpointUrl, {
+      method: backendCfg.method,
+      headers: backendCfg.headers,
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn(
+      "[PlannerLLM] Network error while calling LLM backend; falling back.",
+      err
+    );
+    updateLastPlannerLLMStatus({
+      ok: false,
+      stage: "network",
+      reason:
+        "Network error when calling local LLM backend (server may be offline).",
+      model: backendCfg.model || null,
+    });
+    return {
+      steps: [],
+      notes:
+        "LLM backend network error (server may be offline); heuristic planner should be used as fallback.",
+    };
+  }
+
+  if (!response || !response.ok) {
+    console.warn(
+      "[PlannerLLM] LLM backend returned non-OK status; falling back.",
+      response && {
+        status: response.status,
+        statusText: response.statusText,
+      }
+    );
+    updateLastPlannerLLMStatus({
+      ok: false,
+      stage: "http",
+      reason:
+        "Local LLM backend responded with non-OK HTTP status (see console).",
+      model: backendCfg.model || null,
+    });
+    return {
+      steps: [],
+      notes:
+        "LLM backend responded with an HTTP error; heuristic planner should be used as fallback.",
+    };
+  }
+
+  let json;
+  try {
+    json = await response.json();
+  } catch (err) {
+    console.warn(
+      "[PlannerLLM] Failed to parse backend JSON response; falling back.",
+      err
+    );
+    updateLastPlannerLLMStatus({
+      ok: false,
+      stage: "parse",
+      reason: "Local LLM backend returned invalid JSON.",
+      model: backendCfg.model || null,
+    });
+    return {
+      steps: [],
+      notes:
+        "LLM backend returned invalid JSON; heuristic planner should be used as fallback.",
+    };
+  }
+
+  const rawSteps = Array.isArray(json?.steps) ? json.steps : [];
+  const normalizedSteps = [];
+
+  for (const raw of rawSteps) {
+    const normalized = normalizePlainStep(raw);
+    if (normalized) {
+      normalizedSteps.push(normalized);
+    }
+  }
+
+  const notes =
+    typeof json?.notes === "string" && json.notes.trim()
+      ? json.notes.trim()
+      : undefined;
+
+  if (normalizedSteps.length === 0) {
+    console.warn(
+      "[PlannerLLM] LLM backend returned zero usable steps; planner will fall back to heuristics."
+    );
+    updateLastPlannerLLMStatus({
+      ok: false,
+      stage: "empty",
+      reason:
+        "Local LLM backend returned no usable steps; heuristic planner will be used.",
+      model: backendCfg.model || null,
+    });
+  } else {
+    console.log("[PlannerLLM] LLM backend produced steps:", {
+      count: normalizedSteps.length,
+    });
+    updateLastPlannerLLMStatus({
+      ok: true,
+      stage: "success",
+      reason: "Local LLM backend returned a usable plan.",
+      model: backendCfg.model || null,
+    });
+  }
 
   return {
     steps: normalizedSteps,
