@@ -464,9 +464,11 @@
     // Phase 8 – Local, offline-first LLM backend configuration.
     // This assumes a local HTTP server (e.g., Ollama / LM Studio / GPT4All bridge)
     // running on the same machine. No API keys or secrets live in the frontend.
+    // For Ollama 8B, you might use a model tag like "llama3.1:8b" after
+    // running:  ollama pull llama3.1:8b
     window.FORGE_PLANNER_CONFIG = {
       endpointUrl: "http://localhost:11434/forge-plan", // TODO MAGUS_REVIEW: adjust path/port to your local bridge
-      model: "llama3:latest",
+      model: "llama3.1:8b", // TODO MAGUS_REVIEW: example Ollama 8B model tag; adjust to match your local model
       method: "POST",
       headers: {
         "Content-Type": "application/json"
