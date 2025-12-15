@@ -803,7 +803,7 @@ function setupStepsUI() {
       length: null,
       location: {
         label: "Bend location",
-        placeholder: "e.g. 3\" from tip",
+        placeholder: 'e.g. 3" from tip',
         key: "location",
         numeric: false,
       },
@@ -1050,7 +1050,11 @@ function setupStepsUI() {
 
     const parsedDelta = parseVolumeDelta(volumeDeltaRaw);
     const volumeDelta =
-      parsedDelta === null ? null : Number.isFinite(parsedDelta) ? parsedDelta : null;
+      parsedDelta === null
+        ? null
+        : Number.isFinite(parsedDelta)
+          ? parsedDelta
+          : null;
 
     const lengthParam = parseLengthParam(lengthInput ? lengthInput.value : "");
     const locationParam = parseLocationParam(
@@ -1332,7 +1336,10 @@ function setupStepsUI() {
 /* PHASE 8: AUTONOMOUS PLANNER UI WIRING                                      */
 /* -------------------------------------------------------------------------- */
 
-// Phase 8.x utilities: context building + operation normalization.
+/**
+ * Phase 8.x utilities: context building + operation normalization.
+ * (Used by LLM-first orchestrator below.)
+ */
 
 function normalizeOperationType(rawType) {
   if (!rawType || typeof rawType !== "string") return null;
@@ -1395,9 +1402,10 @@ function buildPlannerContextFromAppState(startingStock, targetShape) {
   const volumeSummary = {
     startingVolume: startingVolume,
     targetVolume: targetVolume,
-    volumeDelta: Number.isFinite(startingVolume) && Number.isFinite(targetVolume)
-      ? targetVolume - startingVolume
-      : null,
+    volumeDelta:
+      Number.isFinite(startingVolume) && Number.isFinite(targetVolume)
+        ? targetVolume - startingVolume
+        : null,
     units:
       (startingStock && startingStock.units) ||
       (targetShape && targetShape.units) ||
@@ -1406,21 +1414,25 @@ function buildPlannerContextFromAppState(startingStock, targetShape) {
 
   // "Extracted features" placeholder: lightweight hints only.
   const extractedFeatures = {
-    targetSourceType: targetShape && targetShape.sourceType ? targetShape.sourceType : null,
+    targetSourceType:
+      targetShape && targetShape.sourceType ? targetShape.sourceType : null,
     hasCadBounds:
-      !!(targetShape &&
+      !!(
+        targetShape &&
         targetShape.metadata &&
         targetShape.metadata.bounds &&
-        typeof targetShape.metadata.bounds === "object"),
+        typeof targetShape.metadata.bounds === "object"
+      ),
     hasTargetDims:
-      !!(targetShape &&
+      !!(
+        targetShape &&
         (Number.isFinite(targetShape.length) ||
           Number.isFinite(targetShape.width) ||
-          Number.isFinite(targetShape.thickness))),
+          Number.isFinite(targetShape.thickness))
+      ),
   };
 
-  // Snapshot-ish objects. If these are class instances, JSON stringify on the
-  // backend will still see enumerable fields; otherwise it's fine.
+  // Snapshot-ish objects.
   const startingStockSnapshot = startingStock || null;
   const targetShapeSnapshot = targetShape || null;
 
@@ -1435,6 +1447,10 @@ function buildPlannerContextFromAppState(startingStock, targetShape) {
       "Return a concise forging operation plan. Use canonical operationType ids where possible.",
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* LEGACY / REFERENCE PLANNER UI VARIANTS                                     */
+/* -------------------------------------------------------------------------- */
 
 // TODO MAGUS_REVIEW: legacy setupPlannerUI commented out by ForgeAI
 // (reason: Phase 8.4 requires recomputeTimeline() so storyboard / step
@@ -1507,7 +1523,6 @@ function buildPlannerContextFromAppState(startingStock, targetShape) {
 //       // Replace any existing user-defined steps with the planner-generated ones.
 //       clearSteps();
 //
-//
 //       plannedSteps.forEach((step) => {
 //         let concreteStep = step;
 //
@@ -1542,345 +1557,8 @@ function buildPlannerContextFromAppState(startingStock, targetShape) {
 //   });
 // }
 
-// TODO MAGUS_REVIEW: previous *active* sync setupPlannerUI, now commented out
-// in favor of async version that awaits the new async planner.
-/*
-function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button…");
-
-  const button = document.getElementById("steps-autoplan-btn");
-  const errorEl = document.getElementById("steps-error");
-
-  if (!button) {
-    console.warn(
-      "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
-    );
-    return;
-  }
-
-  button.addEventListener("click", () => {
-    if (!appState) {
-      console.error("[Planner] appState is not available.");
-      return;
-    }
-
-    if (!errorEl) {
-      console.error("[Planner] steps error element (#steps-error) not found.");
-    }
-
-    if (errorEl) {
-      clearStepsError(errorEl);
-    }
-
-    const startingStock = appState.startingStock || null;
-    const targetShape = appState.targetShape || null;
-
-    if (!startingStock) {
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Please define the starting stock before generating a forging plan."
-        );
-      }
-      return;
-    }
-
-    if (!targetShape) {
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Please define a target shape (manual or STL) before generating a forging plan."
-        );
-      }
-      return;
-    }
-
-    try {
-      console.log("[Planner] Invoking autoPlan(startingStock, targetShape)…");
-      const plannedSteps = autoPlan(startingStock, targetShape) || [];
-
-      if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
-        if (errorEl) {
-          showStepsError(
-            errorEl,
-            "Planner did not produce any steps. Try adjusting the description or target volume."
-          );
-        }
-        return;
-      }
-
-      // Replace any existing user-defined steps with the planner-generated ones.
-      clearSteps();
-
-      plannedSteps.forEach((step) => {
-        let concreteStep = step;
-
-        // Safety: ensure we always store ForgeStep instances in appState.steps.
-        if (!(step instanceof ForgeStep)) {
-          concreteStep = new ForgeStep(
-            step.operationType,
-            step.params || {},
-            startingStock
-          );
-        }
-
-        addStep(concreteStep);
-      });
-
-      // Phase 8.4: update geometry / storyboard immediately so overlays,
-      // snapshots, and any future storyboard views respond to the new plan.
-      recomputeTimeline();
-
-      // Ensure the steps panel and target comparison are refreshed.
-      refreshStepsUI();
-      refreshTargetUI();
-    } catch (err) {
-      console.error("[Planner] autoPlan failed with error:", err);
-      if (errorEl) {
-        showStepsError(
-          errorEl,
-          "Planner encountered an error while generating the forging plan. See console for details."
-        );
-      }
-    }
-  });
-}
-*/
-
-// TODO MAGUS_REVIEW: previous async setupPlannerUI that still called the
-// synchronous autoPlan(). Kept for comparison with the new LLM-aware version.
-/*
-// function setupPlannerUI() {
-//   console.log("[Planner] Setting up Generate Forging Plan button (async)…");
-//
-//   const button = document.getElementById("steps-autoplan-btn");
-//   const errorEl = document.getElementById("steps-error");
-//
-//   if (!button) {
-//     console.warn(
-//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
-//     );
-//     return;
-//   }
-//
-//   button.addEventListener("click", async () => {
-//     if (!appState) {
-//       console.error("[Planner] appState is not available.");
-//       return;
-//     }
-//
-//     if (!errorEl) {
-//       console.error("[Planner] steps error element (#steps-error) not found.");
-//     }
-//
-//     if (errorEl) {
-//       clearStepsError(errorEl);
-//     }
-//
-//     const startingStock = appState.startingStock || null;
-//     const targetShape = appState.targetShape || null;
-//
-//     if (!startingStock) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define the starting stock before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     if (!targetShape) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define a target shape (manual or STL) before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     try {
-//       console.log(
-//         "[Planner] Invoking async autoPlan(startingStock, targetShape)…"
-//       );
-//       const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
-//
-//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
-//         if (errorEl) {
-//           showStepsError(
-//             errorEl,
-//             "Planner did not produce any steps. Try adjusting the description or target volume."
-//           );
-//         }
-//         return;
-//       }
-//
-//       // Replace any existing user-defined steps with the planner-generated ones.
-//       clearSteps();
-//
-//       plannedSteps.forEach((step) => {
-//         let concreteStep = step;
-//
-//         // Safety: ensure we always store ForgeStep instances in appState.steps.
-//         if (!(step instanceof ForgeStep)) {
-//           concreteStep = new ForgeStep(
-//             step.operationType,
-//             step.params || {},
-//             startingStock
-//           );
-//         }
-//
-//         addStep(concreteStep);
-//       });
-//
-//       // Phase 8.4: update geometry / storyboard immediately so overlays,
-//       // snapshots, and any future storyboard views respond to the new plan.
-//       recomputeTimeline();
-//
-//       // Ensure the steps panel and target comparison are refreshed.
-//       refreshStepsUI();
-//       refreshTargetUI();
-//     } catch (err) {
-//       console.error("[Planner] async autoPlan failed with error:", err);
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Planner encountered an error while generating the forging plan. See console for details."
-//         );
-//       }
-//     }
-//   });
-// }
-//*/
-
-/**
- * Phase 8.4 LEGACY: LLM-aware async planner UI wiring (always used LLM path).
- * Kept for reference; superseded by the toggle-aware version below.
- */
-// function setupPlannerUI() {
-//   console.log("[Planner] Setting up Generate Forging Plan button (LLM-aware async)…");
-//
-//   const button = document.getElementById("steps-autoplan-btn");
-//   const errorEl = document.getElementById("steps-error");
-//
-//   if (!button) {
-//     console.warn(
-//       "[Planner] #steps-autoplan-btn not found in DOM; planner UI wiring skipped."
-//     );
-//     return;
-//   }
-//
-//   button.addEventListener("click", async () => {
-//     if (!appState) {
-//       console.error("[Planner] appState is not available.");
-//       return;
-//     }
-//
-//     if (!errorEl) {
-//       console.error("[Planner] steps error element (#steps-error) not found.");
-//     }
-//
-//     if (errorEl) {
-//       clearStepsError(errorEl);
-//     }
-//
-//     const startingStock = appState.startingStock || null;
-//     const targetShape = appState.targetShape || null;
-//
-//     if (!startingStock) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define the starting stock before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     if (!targetShape) {
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Please define a target shape (manual or STL) before generating a forging plan."
-//         );
-//       }
-//       return;
-//     }
-//
-//     const originalLabel = button.textContent;
-//     button.disabled = true;
-//     button.textContent = "Generating plan…";
-//
-//     try {
-//       console.log(
-//         "[Planner] Invoking autoPlanWithLLM(startingStock, targetShape)…"
-//       );
-//       const plannedSteps =
-//         (await autoPlanWithLLM(startingStock, targetShape)) || [];
-//
-//       if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
-//         if (errorEl) {
-//           showStepsError(
-//             errorEl,
-//             "Planner did not produce any steps. Try adjusting the description or target volume."
-//           );
-//         }
-//         return;
-//       }
-//
-//       // Replace any existing user-defined steps with the planner-generated ones.
-//       clearSteps();
-//
-//       plannedSteps.forEach((step) => {
-//         let concreteStep = step;
-//
-//         // Safety: ensure we always store ForgeStep instances in appState.steps.
-//         if (!(step instanceof ForgeStep)) {
-//           concreteStep = new ForgeStep(
-//             step.operationType,
-//             step.params || {},
-//             startingStock
-//           );
-//         }
-//
-//         addStep(concreteStep);
-//       });
-//
-//       // Phase 8.4: update geometry / storyboard immediately so overlays,
-//       // snapshots, and any future storyboard views respond to the new plan.
-//       recomputeTimeline();
-//
-//       // Ensure the steps panel and target comparison are refreshed.
-//       refreshStepsUI();
-//       refreshTargetUI();
-//     } catch (err) {
-//       console.error("[Planner] autoPlanWithLLM failed with error:", err);
-//       if (errorEl) {
-//         showStepsError(
-//           errorEl,
-//           "Planner encountered an error while generating the forging plan. See console for details."
-//         );
-//       }
-//     } finally {
-//       button.disabled = false;
-//       button.textContent = originalLabel;
-//     }
-//   });
-// }
-
 /**
  * Phase 8.4 FINAL: Toggle-aware LLM/heuristic planner UI wiring.
- *
- * - Respects the "Use local LLM suggestions" checkbox.
- * - Uses heuristic autoPlan() when LLM is disabled or not configured.
- * - Uses autoPlanWithLLM() when LLM is enabled and a backend endpoint is set.
- * - Keeps full fallback behavior inside planner.js (LLM errors → heuristics).
- * - Updates geometry/storyboard via recomputeTimeline() after planning.
- *
- * Phase 9 prep:
- * - Storyboard animation hooks will attach around recomputeTimeline() and
- *   the point where appState.steps is replaced by the new plan.
  *
  * NOTE (Phase 8.x): This implementation is now DEPRECATED (kept for reference)
  * because Phase 8.x usable v1 requires:
@@ -1980,8 +1658,6 @@ function setupPlannerUI() {
 //       !!llmToggle && !!llmToggle.checked && hasBackendConfig === true;
 //
 //     if (llmStatusEl) {
-//       // Reset any previous error-ish wording; simple text only, CSS-neutral.
-//       // (Phase 9 could style this more richly.)
 //       if (!hasBackendConfig) {
 //         llmStatusEl.textContent =
 //           "Local LLM endpoint not configured; using heuristic planner.";
@@ -1998,17 +1674,9 @@ function setupPlannerUI() {
 //       let plannedSteps = [];
 //
 //       if (useLLM) {
-//         console.log(
-//           "[Planner] LLM toggle is ON and backend configured; using autoPlanWithLLM."
-//         );
 //         plannedSteps =
 //           (await autoPlanWithLLM(startingStock, targetShape)) || [];
 //       } else {
-//         console.log(
-//           "[Planner] LLM toggle is OFF or backend not configured; using heuristic autoPlan."
-//         );
-//         // NOTE: autoPlan is synchronous, but awaiting it is harmless and keeps
-//         // the code uniform if it ever becomes async.
 //         plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
 //       }
 //
@@ -2026,13 +1694,11 @@ function setupPlannerUI() {
 //         return;
 //       }
 //
-//       // Replace any existing user-defined steps with the planner-generated ones.
 //       clearSteps();
 //
 //       plannedSteps.forEach((step) => {
 //         let concreteStep = step;
 //
-//         // Safety: ensure we always store ForgeStep instances in appState.steps.
 //         if (!(step instanceof ForgeStep)) {
 //           concreteStep = new ForgeStep(
 //             step.operationType,
@@ -2044,13 +1710,8 @@ function setupPlannerUI() {
 //         addStep(concreteStep);
 //       });
 //
-//       // Phase 8.4: update geometry / storyboard immediately so overlays,
-//       // snapshots, and (future) storyboard panels respond to the new plan.
-//       // Phase 9 storyboard animation engine will hook into the state/timeline
-//       // implied by recomputeTimeline() and appState.stepStockStates.
 //       recomputeTimeline();
 //
-//       // Ensure the steps panel and target comparison are refreshed.
 //       refreshStepsUI();
 //       refreshTargetUI();
 //
@@ -2080,9 +1741,11 @@ function setupPlannerUI() {
 //   });
 // }
 
+/* -------------------------------------------------------------------------- */
+/* PHASE 8.x USABLE V1: LLM-first orchestrator (ACTIVE)                       */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Phase 8.x USABLE V1: LLM-first orchestrator
- *
  * Requirements implemented:
  *  A) Validate inputs (hard errors only for missing stock/target)
  *  B) Call LLM FIRST: plannerLLM.suggestOperationsWithLLM(context)
@@ -2092,7 +1755,9 @@ function setupPlannerUI() {
  *  D) Error handling: backend down → soft note (optional) + heuristic fallback
  */
 function setupPlannerUI() {
-  console.log("[Planner] Setting up Generate Forging Plan button (Phase 8.x LLM-first)…");
+  console.log(
+    "[Planner] Setting up Generate Forging Plan button (Phase 8.x LLM-first)…"
+  );
 
   const button = document.getElementById("steps-autoplan-btn");
   const errorEl = document.getElementById("steps-error");
@@ -2106,4 +1771,260 @@ function setupPlannerUI() {
   }
 
   function setSoftPlannerNote(message) {
-    // Optional status
+    // Optional status element.
+    if (!llmStatusEl) return;
+    llmStatusEl.textContent = message || "";
+  }
+
+  function coerceForgeStepFromLLMStep(stepLike, startingStock) {
+    if (!stepLike || typeof stepLike !== "object") return null;
+
+    const normalizedOp = normalizeOperationType(stepLike.operationType);
+    if (!normalizedOp) return null;
+
+    const params =
+      stepLike.params && typeof stepLike.params === "object"
+        ? stepLike.params
+        : {};
+
+    const massChangeType = getOperationMassChangeType(normalizedOp);
+
+    // Best-effort description: label + rationale if present
+    let description = "";
+    try {
+      description = getOperationLabel(normalizedOp) || normalizedOp;
+    } catch (e) {
+      description = normalizedOp;
+    }
+    if (
+      typeof stepLike.rationale === "string" &&
+      stepLike.rationale.trim().length > 0
+    ) {
+      description = `${description}: ${stepLike.rationale.trim()}`;
+    }
+
+    try {
+      return new ForgeStep(normalizedOp, params, startingStock || null, {
+        description,
+        units: (startingStock && startingStock.units) || "in",
+        volumeDeltaHint: null,
+        massChangeTypeOverride: massChangeType,
+      });
+    } catch (e) {
+      console.warn("[Planner] Could not construct ForgeStep from LLM step:", e);
+      return null;
+    }
+  }
+
+  button.addEventListener("click", async () => {
+    if (!appState) {
+      console.error("[Planner] appState is not available.");
+      return;
+    }
+
+    if (errorEl) clearStepsError(errorEl);
+
+    const startingStock = appState.startingStock || null;
+    const targetShape = appState.targetShape || null;
+
+    if (!startingStock) {
+      if (errorEl) {
+        showStepsError(
+          errorEl,
+          "Please define the starting stock before generating a forging plan."
+        );
+      }
+      return;
+    }
+
+    if (!targetShape) {
+      if (errorEl) {
+        showStepsError(
+          errorEl,
+          "Please define a target shape (manual or STL) before generating a forging plan."
+        );
+      }
+      return;
+    }
+
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Generating plan…";
+
+    let usedLLM = false;
+
+    try {
+      const context = buildPlannerContextFromAppState(startingStock, targetShape);
+
+      // 1) Try LLM FIRST
+      setSoftPlannerNote(
+        "Requesting plan from local LLM… (heuristic fallback if unavailable)"
+      );
+
+      let llmResponse = null;
+      let llmSteps = [];
+
+      try {
+        llmResponse = await plannerLLM.suggestOperationsWithLLM(context);
+        if (llmResponse && Array.isArray(llmResponse.steps)) {
+          llmSteps = llmResponse.steps;
+        }
+      } catch (llmErr) {
+        console.warn(
+          "[Planner] LLM call failed; will fall back to heuristics:",
+          llmErr
+        );
+        llmSteps = [];
+      }
+
+      if (Array.isArray(llmSteps) && llmSteps.length > 0) {
+        usedLLM = true;
+
+        // Replace any existing user-defined steps with the planner-generated ones.
+        clearSteps();
+
+        llmSteps.forEach((s) => {
+          const concreteStep = coerceForgeStepFromLLMStep(s, startingStock);
+          if (concreteStep) addStep(concreteStep);
+        });
+
+        // If everything got filtered out during coercion, treat as empty.
+        if (!Array.isArray(appState.steps) || appState.steps.length === 0) {
+          usedLLM = false;
+          setSoftPlannerNote(
+            "LLM returned steps but none were usable; using heuristic planner."
+          );
+        } else {
+          setSoftPlannerNote("LLM plan applied successfully.");
+        }
+      }
+
+      // 2) Heuristic fallback if LLM gave 0 steps (or unusable)
+      if (!usedLLM) {
+        console.log("[Planner] Using heuristic autoPlan fallback…");
+        const plannedSteps = (await autoPlan(startingStock, targetShape)) || [];
+
+        if (!Array.isArray(plannedSteps) || plannedSteps.length === 0) {
+          if (errorEl) {
+            showStepsError(
+              errorEl,
+              "Planner did not produce any steps. Try adjusting the description or target volume."
+            );
+          }
+          return;
+        }
+
+        clearSteps();
+
+        plannedSteps.forEach((step) => {
+          let concreteStep = step;
+
+          if (!(step instanceof ForgeStep)) {
+            concreteStep = new ForgeStep(
+              step.operationType,
+              step.params || {},
+              startingStock
+            );
+          }
+
+          addStep(concreteStep);
+        });
+
+        setSoftPlannerNote("Heuristic plan applied successfully.");
+      }
+
+      // 3) Refresh geometry/storyboard immediately
+      recomputeTimeline();
+      refreshStepsUI();
+      refreshTargetUI();
+    } catch (err) {
+      console.error("[Planner] planner orchestration failed with error:", err);
+      if (errorEl) {
+        showStepsError(
+          errorEl,
+          "Planner encountered an error while generating the forging plan. See console for details."
+        );
+      }
+      setSoftPlannerNote("Planner failed; see console.");
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* GEOMETRY SIMULATION + HEURISTIC PREVIEW                                    */
+/* -------------------------------------------------------------------------- */
+
+function setupGeometrySimulationUI() {
+  console.log("[Geometry] Setting up geometry simulation UI…");
+
+  const button = document.getElementById("geom-simulate-btn");
+  const outputEl = document.getElementById("geom-output");
+  const errorEl = document.getElementById("geom-error");
+
+  if (!button || !outputEl) {
+    console.error("[Geometry] Missing geom-simulate-btn or geom-output.");
+    return;
+  }
+
+  button.addEventListener("click", (evt) => {
+    evt.preventDefault();
+
+    if (errorEl) {
+      errorEl.textContent = "";
+    }
+    outputEl.textContent = "";
+
+    const startingStock = appState.startingStock || null;
+    const steps = appState.steps || [];
+
+    if (!startingStock) {
+      if (errorEl) {
+        errorEl.textContent =
+          "Please set a starting stock before running geometry simulation.";
+      }
+      return;
+    }
+
+    if (!Array.isArray(steps) || steps.length === 0) {
+      if (errorEl) {
+        errorEl.textContent =
+          "Please add at least one forging step before running geometry simulation.";
+      }
+      return;
+    }
+
+    try {
+      recomputeTimeline();
+      const preview = buildHeuristicPreviewFromAppState(appState);
+      const summary = describeHeuristicPreview(preview);
+      outputEl.textContent = summary;
+    } catch (err) {
+      console.error("[Geometry] Error in geometry simulation:", err);
+      if (errorEl) {
+        errorEl.textContent =
+          "Error while running geometry simulation. See console for details.";
+      }
+    }
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* APP INIT                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function initApp() {
+  console.log("Smithing Storyboarder booting up…");
+  setupHelloButton();
+  setupStockForm();
+  setupTargetShapeForm();
+  setupCadImport();
+  setupCadPreviewCanvas();
+  setupStepsUI();
+  setupPlannerUI();
+  setupGeometrySimulationUI();
+}
+
+document.addEventListener("DOMContentLoaded", initApp);

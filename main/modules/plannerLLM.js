@@ -333,129 +333,28 @@ function updateLastPlannerLLMStatus(patch) {
  * ---------------------------------------------------------------------- */
 
 /**
- * LEGACY REAL IMPLEMENTATION (pre-toggle diagnostics), preserved for reference.
- */
-/*
-export async function suggestOperationsWithLLM(plannerContext) {
-  // Light debug logging: keep it shallow so it doesn't spam the console.
-  console.log("[PlannerLLM] suggestOperationsWithLLM invoked.", {
-    hasContext: !!plannerContext,
-    allowedOpsCount: Array.isArray(plannerContext?.allowedOperations)
-      ? plannerContext.allowedOperations.length
-      : null,
-    maxSteps: plannerContext?.maxSteps ?? null,
-  });
-
-  const backendCfg = getPlannerBackendConfig();
-  if (!backendCfg.enabled) {
-    console.warn(
-      "[PlannerLLM] Backend not configured; returning empty LLM plan. Reason:",
-      backendCfg.reason
-    );
-    return {
-      steps: [],
-      notes:
-        "LLM backend not configured; heuristic planner should be used as fallback.",
-    };
-  }
-
-  // Build payload for your backend. The backend can then turn this into
-  // an actual LLM prompt however it chooses.
-  const payload = {
-    spec: INTERNAL_PLANNER_SPEC.trim(),
-    schema: {
-      // NOTE: operations is the enum map (e.g. { DRAW_OUT: "drawOut", ... }).
-      operations: FORGE_OPERATION_TYPES,
-      // Detailed per-operation semantics; see forgeStepSchema.js.
-      paramSchemas: getAllOperationParamSchemas(),
-      // NEW: explicit schema version + catalog to help the backend stay in sync.
-      schemaVersion: FORGE_STEP_SCHEMA_VERSION,
-      operationCatalog: getOperationCatalogForPlanner(),
-    },
-    context: plannerContext || null,
-  };
-
-  let response;
-  try {
-    response = await fetch(backendCfg.endpointUrl, {
-      method: backendCfg.method,
-      headers: backendCfg.headers,
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.warn(
-      "[PlannerLLM] Network error while calling LLM backend; falling back.",
-      err
-    );
-    return {
-      steps: [],
-      notes:
-        "LLM backend network error; heuristic planner should be used as fallback.",
-    };
-  }
-
-  if (!response || !response.ok) {
-    console.warn(
-      "[PlannerLLM] LLM backend returned non-OK status; falling back.",
-      response && {
-        status: response.status,
-        statusText: response.statusText,
-      }
-    );
-    return {
-      steps: [],
-      notes:
-        "LLM backend responded with an error; heuristic planner should be used as fallback.",
-    };
-  }
-
-  let json;
-  try {
-    json = await response.json();
-  } catch (err) {
-    console.warn(
-      "[PlannerLLM] Failed to parse backend JSON response; falling back.",
-      err
-    );
-    return {
-      steps: [],
-      notes:
-        "LLM backend returned invalid JSON; heuristic planner should be used as fallback.",
-    };
-  }
-
-  const rawSteps = Array.isArray(json?.steps) ? json.steps : [];
-  const normalizedSteps = [];
-
-  for (const raw of rawSteps) {
-    const normalized = normalizePlainStep(raw);
-    if (normalized) {
-      normalizedSteps.push(normalized);
-    }
-  }
-
-  const notes =
-    typeof json?.notes === "string" && json.notes.trim()
-      ? json.notes.trim()
-      : undefined;
-
-  console.log("[PlannerLLM] LLM backend produced steps:", {
-    count: normalizedSteps.length,
-  });
-
-  return {
-    steps: normalizedSteps,
-    notes,
-  };
-}
-*/
-
-/**
  * Main public function used by planner.js
  *
- * Phase 8.2 / 8.6 upgraded behavior:
- *   - Uses FORGE_PLANNER_CONFIG.model when present.
- *   - Writes diagnostic crumbs to window.FORGE_PLANNER_LAST_STATUS.
+ * Phase 8.x usable v1 requirements (frontend ↔ backend contract):
+ *
+ * Frontend sends:
+ *   {
+ *     "spec": "...INTERNAL_PLANNER_SPEC...",
+ *     "context": { ...plannerContext... },
+ *     "schemas": { ...operationParamSchemas... }
+ *   }
+ *
+ * Backend returns:
+ *   {
+ *     "steps": [ { "operationType": "taper", "params": { ... } }, ... ],
+ *     "notes": "optional string"
+ *   }
+ *
+ * On error, backend should return:
+ *   { "steps": [], "notes": "..." }
+ *
+ * This function:
+ *   - Posts exactly the above shape (plus optional non-breaking extras).
  *   - Returns { steps: [], notes } on any failure so planner.js can safely
  *     fall back to the heuristic planner.
  *
@@ -491,21 +390,39 @@ export async function suggestOperationsWithLLM(plannerContext) {
     };
   }
 
-  // Build payload for your backend. The backend can then turn this into
-  // an actual LLM prompt however it chooses.
+  // -----------------------------------------------------------------------
+  // TODO MAGUS_REVIEW: prior payload shape used "schema:{...}".
+  // Kept for reference. The Phase 8.x backend contract expects "schemas".
+  // -----------------------------------------------------------------------
+  // const payload = {
+  //   spec: INTERNAL_PLANNER_SPEC.trim(),
+  //   schema: {
+  //     operations: FORGE_OPERATION_TYPES,
+  //     paramSchemas: getAllOperationParamSchemas(),
+  //     schemaVersion: FORGE_STEP_SCHEMA_VERSION,
+  //     operationCatalog: getOperationCatalogForPlanner(),
+  //   },
+  //   context: plannerContext || null,
+  //   backend: {
+  //     model: backendCfg.model || null,
+  //   },
+  // };
+
+  // Phase 8.x contract payload (required keys: spec, context, schemas).
   const payload = {
     spec: INTERNAL_PLANNER_SPEC.trim(),
-    schema: {
-      // NOTE: operations is the enum map (e.g. { DRAW_OUT: "drawOut", ... }).
-      operations: FORGE_OPERATION_TYPES,
-      // Detailed per-operation semantics; see forgeStepSchema.js.
-      paramSchemas: getAllOperationParamSchemas(),
-      // Explicit schema version + catalog to help the backend stay in sync.
+    context: plannerContext || null,
+    schemas: getAllOperationParamSchemas(),
+
+    // Optional extra metadata (backend may ignore).
+    // This is helpful for debugging and for keeping backend logic in sync.
+    meta: {
       schemaVersion: FORGE_STEP_SCHEMA_VERSION,
       operationCatalog: getOperationCatalogForPlanner(),
+      operations: FORGE_OPERATION_TYPES,
     },
-    context: plannerContext || null,
-    // NEW: hint to your local backend about which model to use.
+
+    // Optional: model hint for local backends (e.g., Ollama).
     backend: {
       model: backendCfg.model || null,
     },

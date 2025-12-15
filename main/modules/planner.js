@@ -360,8 +360,7 @@ function proposeVolumeScaffoldSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.DRAW_OUT,
         params: {
-          description:
-            "Generic draw-out step to lengthen and refine the bar.",
+          description: "Generic draw-out step to lengthen and refine the bar.",
           startLength: defaultDrawRegion,
           targetLength: defaultDrawRegion * 1.2,
           massChangeTypeOverride: getOperationMassChangeType(
@@ -389,9 +388,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
   const stockLength = asPositiveNumber(startingStock && startingStock.length);
   const units = (startingStock && startingStock.units) || "units";
 
-  const comfyBendRadius = Number.isFinite(thickness)
-    ? thickness * 1.25
-    : 1.5;
+  const comfyBendRadius = Number.isFinite(thickness) ? thickness * 1.25 : 1.5;
 
   switch (analysis.inferredPattern) {
     case "hook": {
@@ -410,8 +407,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.BEND,
         params: {
-          description:
-            "Form the main hook bend at the tapered section.",
+          description: "Form the main hook bend at the tapered section.",
           insideRadius: comfyBendRadius,
           angleDegrees: 90,
           location: "near_tip",
@@ -425,8 +421,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.TAPER,
         params: {
-          description:
-            "Taper the end in preparation for scrolling.",
+          description: "Taper the end in preparation for scrolling.",
           regionLength: stockLength ? stockLength * 0.2 : 2,
           massChangeTypeOverride: getOperationMassChangeType(
             FORGE_OPERATION_TYPES.TAPER
@@ -437,8 +432,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.SCROLL,
         params: {
-          description:
-            "Roll the tapered end into a decorative scroll.",
+          description: "Roll the tapered end into a decorative scroll.",
           scrollDiameter: thickness ? thickness * 2.5 : 2,
           turns: 1.0,
           location: "tip",
@@ -463,8 +457,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.FLATTEN,
         params: {
-          description:
-            "Flatten the end to create the leaf blade blank.",
+          description: "Flatten the end to create the leaf blade blank.",
           regionLength: stockLength ? stockLength * 0.25 : 2,
           targetThickness: thickness ? thickness * 0.4 : 0.5,
           units,
@@ -473,8 +466,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.FULLER,
         params: {
-          description:
-            "Fuller in the central vein of the leaf.",
+          description: "Fuller in the central vein of the leaf.",
           grooveDepth: thickness ? thickness * 0.15 : 0.2,
           grooveWidth: thickness ? thickness * 0.4 : 0.5,
           face: "flat_side",
@@ -488,8 +480,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.TWIST,
         params: {
-          description:
-            "Twist a central section of the bar for decoration.",
+          description: "Twist a central section of the bar for decoration.",
           regionLength: stockLength ? stockLength * 0.4 : 4,
           turns: 1.0,
           axis: "longitudinal",
@@ -503,8 +494,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.PUNCH,
         params: {
-          description:
-            "Punch a through-hole where the opening is needed.",
+          description: "Punch a through-hole where the opening is needed.",
           holeDiameter: thickness ? thickness * 0.6 : 0.5,
           holeDepth: thickness || 1,
           location: "center_section",
@@ -531,8 +521,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.SLIT,
         params: {
-          description:
-            "Slit the end of the bar to create two legs.",
+          description: "Slit the end of the bar to create two legs.",
           slitLength: stockLength ? stockLength * 0.2 : 2,
           location: "tip",
           massChangeTypeOverride: getOperationMassChangeType(
@@ -544,8 +533,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.SPLIT,
         params: {
-          description:
-            "Open the slit into a full fork / split.",
+          description: "Open the slit into a full fork / split.",
           spreadAngleDegrees: 30,
           units,
         },
@@ -558,8 +546,7 @@ function proposeFeatureSpecs(analysis, startingStock) {
       specs.push({
         operationType: FORGE_OPERATION_TYPES.STRAIGHTEN,
         params: {
-          description:
-            "Straighten and refine the bar after primary shaping.",
+          description: "Straighten and refine the bar after primary shaping.",
           units,
         },
       });
@@ -941,9 +928,7 @@ export function autoPlan(startingStock, targetShape) {
   //     Currently a no-op stub; returns null so behavior is unchanged.
   const llmPlan = maybeUseLLMPlan(startingStock, targetShape, analysis);
   if (Array.isArray(llmPlan) && llmPlan.length > 0) {
-    console.log(
-      "[planner] Using LLM-generated plan (legacy backend hook)."
-    );
+    console.log("[planner] Using LLM-generated plan (legacy backend hook).");
     return llmPlan;
   }
 
@@ -967,11 +952,7 @@ export function autoPlan(startingStock, targetShape) {
   }
 
   // 4) Run a dry-run simulation for diagnostics (volume, constraints, geometry).
-  const diagnostics = simulatePlanForDiagnostics(
-    startingStock,
-    steps,
-    targetShape
-  );
+  const diagnostics = simulatePlanForDiagnostics(startingStock, steps, targetShape);
 
   // 5) Attach diagnostics metadata to each step (non-breaking).
   attachPlannerDiagnostics(steps, analysis, diagnostics);
@@ -1041,9 +1022,7 @@ function buildPlannerContextForLLM(startingStock, targetShape, analysis) {
   // that have canonical semantics defined.
   let allowedOperations = Object.values(FORGE_OPERATION_TYPES);
   try {
-    const schemaIds = getSchemaOperationTypeIds
-      ? getSchemaOperationTypeIds()
-      : null;
+    const schemaIds = getSchemaOperationTypeIds ? getSchemaOperationTypeIds() : null;
     if (Array.isArray(schemaIds) && schemaIds.length > 0) {
       const schemaSet = new Set(schemaIds);
       const filtered = allowedOperations.filter((op) => schemaSet.has(op));
@@ -1131,11 +1110,7 @@ async function maybeUseLLMPlanAsync(startingStock, targetShape, analysis) {
           ? { ...plain.params }
           : {};
 
-      const step = new ForgeStep(
-        plain.operationType,
-        params,
-        currentStateForHeuristics
-      );
+      const step = new ForgeStep(plain.operationType, params, currentStateForHeuristics);
 
       // Attach LLM-specific metadata in a dedicated bag so UI can
       // surface or ignore it in the future without breaking anything.
@@ -1154,10 +1129,7 @@ async function maybeUseLLMPlanAsync(startingStock, targetShape, analysis) {
       steps.push(step);
 
       try {
-        const nextStock = applyOperationToStock(
-          currentStateForHeuristics,
-          step
-        );
+        const nextStock = applyOperationToStock(currentStateForHeuristics, step);
         if (nextStock) {
           currentStateForHeuristics = nextStock;
         }
@@ -1173,11 +1145,7 @@ async function maybeUseLLMPlanAsync(startingStock, targetShape, analysis) {
       return null;
     }
 
-    const diagnostics = simulatePlanForDiagnostics(
-      startingStock,
-      steps,
-      targetShape
-    );
+    const diagnostics = simulatePlanForDiagnostics(startingStock, steps, targetShape);
     attachPlannerDiagnostics(steps, analysis, diagnostics);
 
     return steps;
@@ -1269,18 +1237,17 @@ function combineHeuristicAndLLMPlans(
     if (!step) continue;
     step.plannerMeta = {
       ...(step.plannerMeta || {}),
-      strategy: step.plannerMeta && step.plannerMeta.strategy
-        ? step.plannerMeta.strategy
-        : "heuristic",
+      strategy:
+        step.plannerMeta && step.plannerMeta.strategy
+          ? step.plannerMeta.strategy
+          : "heuristic",
       combinedWithLLM: true,
     };
     combined.push(step);
   }
 
   const heuristicOps = new Set(
-    heuristicSteps
-      .filter((s) => s && s.operationType)
-      .map((s) => s.operationType)
+    heuristicSteps.filter((s) => s && s.operationType).map((s) => s.operationType)
   );
 
   // Detail-oriented operations we especially want to keep from the LLM,
@@ -1301,8 +1268,7 @@ function combineHeuristicAndLLMPlans(
     if (!step || !step.operationType) continue;
     const op = step.operationType;
 
-    const keep =
-      !heuristicOps.has(op) || DETAIL_OPS.has(op);
+    const keep = !heuristicOps.has(op) || DETAIL_OPS.has(op);
 
     if (!keep) {
       continue;
@@ -1310,9 +1276,10 @@ function combineHeuristicAndLLMPlans(
 
     step.plannerMeta = {
       ...(step.plannerMeta || {}),
-      strategy: step.plannerMeta && step.plannerMeta.strategy
-        ? step.plannerMeta.strategy
-        : "llm",
+      strategy:
+        step.plannerMeta && step.plannerMeta.strategy
+          ? step.plannerMeta.strategy
+          : "llm",
       combinedWithHeuristics: true,
     };
 
@@ -1321,11 +1288,7 @@ function combineHeuristicAndLLMPlans(
 
   // Recompute diagnostics for the combined plan so Phase 9 and the UI
   // see a coherent final story of warnings/errors and geometryOk.
-  const diagnostics = simulatePlanForDiagnostics(
-    startingStock,
-    combined,
-    targetShape
-  );
+  const diagnostics = simulatePlanForDiagnostics(startingStock, combined, targetShape);
   attachPlannerDiagnostics(combined, analysis, diagnostics);
 
   return combined;
@@ -1336,15 +1299,71 @@ function combineHeuristicAndLLMPlans(
  *
  *   autoPlanWithLLM(startingStock, targetShape) → Promise<ForgeStep[]>
  *
- * Phase 8.5–8.7 complete behavior:
+ * Phase 8.5–8.7 complete behavior (OLDER COMBINE VERSION):
  *   - Runs the existing heuristic autoPlan() to build a scaffold.
- *   - Tries to get an LLM plan from the configured local backend
- *     (e.g., Ollama 8B running via FORGE_PLANNER_CONFIG).
- *   - If the LLM plan is unavailable or empty, returns the heuristic
- *     plan exactly as before (offline-friendly).
- *   - If both plans exist, combines them via combineHeuristicAndLLMPlans(),
- *     so the final storyboard reflects both volume scaffolding and
- *     LLM refinements.
+ *   - Tries to get an LLM plan from the configured local backend.
+ *   - If both plans exist, combines them via combineHeuristicAndLLMPlans().
+ *
+ * This is kept for reference, but Phase 8.x usable v1 requires:
+ *   - LLM FIRST
+ *   - If LLM returns >= 1 step → use LLM plan as the plan
+ *   - If LLM returns 0 steps (or errors) → fall back to heuristic plan
+ */
+/*
+// export async function autoPlanWithLLM(startingStock, targetShape) {
+//   if (!startingStock || !targetShape) {
+//     console.warn(
+//       "[planner] autoPlanWithLLM called without both startingStock and targetShape."
+//     );
+//     return [];
+//   }
+//
+//   const analysis = analyzeTargetFeatures(startingStock, targetShape);
+//
+//   // 1) Heuristic scaffold (synchronous, same behavior as Phase 8.2).
+//   const heuristicSteps = autoPlan(startingStock, targetShape);
+//
+//   // 2) LLM-suggested refinements (async, via local backend).
+//   const llmSteps = await maybeUseLLMPlanAsync(
+//     startingStock,
+//     targetShape,
+//     analysis
+//   );
+//
+//   if (!Array.isArray(llmSteps) || llmSteps.length === 0) {
+//     console.log("[planner] LLM plan unavailable; using heuristic plan only.");
+//     return Array.isArray(heuristicSteps) ? heuristicSteps : [];
+//   }
+//
+//   if (!Array.isArray(heuristicSteps) || heuristicSteps.length === 0) {
+//     console.log("[planner] Heuristic plan empty; using LLM plan only.");
+//     return llmSteps;
+//   }
+//
+//   console.log("[planner] Combining heuristic scaffold with LLM-suggested refinements.");
+//
+//   return combineHeuristicAndLLMPlans(
+//     heuristicSteps,
+//     llmSteps,
+//     startingStock,
+//     targetShape,
+//     analysis
+//   );
+// }
+*/
+
+/**
+ * Phase 8.x USABLE V1: LLM-first orchestrator.
+ *
+ * Required behavior:
+ *   1) Try LLM backend first (plannerLLM.js), returning ForgeStep[] if >= 1.
+ *   2) If LLM returns 0 steps (or errors) → fall back to heuristic autoPlan().
+ *
+ * Notes:
+ *   - maybeUseLLMPlanAsync() already converts backend JSON into ForgeStep
+ *     instances and attaches diagnostics + plannerMeta.
+ *   - suggestOperationsWithLLM() is expected to return { steps: [], notes } on
+ *     backend errors, so this will gracefully fall back without hard failure.
  */
 export async function autoPlanWithLLM(startingStock, targetShape) {
   if (!startingStock || !targetShape) {
@@ -1356,39 +1375,15 @@ export async function autoPlanWithLLM(startingStock, targetShape) {
 
   const analysis = analyzeTargetFeatures(startingStock, targetShape);
 
-  // 1) Heuristic scaffold (synchronous, same behavior as Phase 8.2).
-  const heuristicSteps = autoPlan(startingStock, targetShape);
+  // 1) LLM FIRST
+  const llmSteps = await maybeUseLLMPlanAsync(startingStock, targetShape, analysis);
 
-  // 2) LLM-suggested refinements (async, via local backend).
-  const llmSteps = await maybeUseLLMPlanAsync(
-    startingStock,
-    targetShape,
-    analysis
-  );
-
-  if (!Array.isArray(llmSteps) || llmSteps.length === 0) {
-    console.log(
-      "[planner] LLM plan unavailable; using heuristic plan only."
-    );
-    return Array.isArray(heuristicSteps) ? heuristicSteps : [];
-  }
-
-  if (!Array.isArray(heuristicSteps) || heuristicSteps.length === 0) {
-    console.log(
-      "[planner] Heuristic plan empty; using LLM plan only."
-    );
+  if (Array.isArray(llmSteps) && llmSteps.length > 0) {
+    console.log("[planner] Using LLM-generated plan (LLM-first Phase 8.x).");
     return llmSteps;
   }
 
-  console.log(
-    "[planner] Combining heuristic scaffold with LLM-suggested refinements."
-  );
-
-  return combineHeuristicAndLLMPlans(
-    heuristicSteps,
-    llmSteps,
-    startingStock,
-    targetShape,
-    analysis
-  );
+  // 2) Fall back to heuristic
+  console.log("[planner] LLM plan empty/unavailable; falling back to heuristic autoPlan().");
+  return autoPlan(startingStock, targetShape);
 }
