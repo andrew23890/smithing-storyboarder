@@ -467,7 +467,7 @@
     // For Ollama 8B, you might use a model tag like "llama3.1:8b" after
     // running:  ollama pull llama3.1:8b
     window.FORGE_PLANNER_CONFIG = {
-      endpointUrl: "http://localhost:11434/forge-plan", // TODO MAGUS_REVIEW: adjust path/port to your local bridge
+      endpointUrl: "http://127.0.0.1:3000/forge-plan", // TODO MAGUS_REVIEW: adjust path/port to your local bridge
       model: "llama3.1:8b", // TODO MAGUS_REVIEW: example Ollama 8B model tag; adjust to match your local model
       method: "POST",
       headers: {
